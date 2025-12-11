@@ -25,6 +25,8 @@ Deno.serve(async (req) => {
       );
     }
 
+    const dominantStyle = inferDominantStyle(entries);
+
     const firstPerson =
       persona && typeof persona.first_person === "string" && persona.first_person.trim().length > 0
         ? persona.first_person.trim()
@@ -75,6 +77,8 @@ Deno.serve(async (req) => {
 ${entriesText}
 `;
 
+    const systemPrompt = buildSystemPromptForWeekly(dominantStyle);
+
     const completionRes = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -84,7 +88,7 @@ ${entriesText}
       body: JSON.stringify({
         model: "gpt-4.1-mini",
         messages: [
-          { role: "system", content: "あなたは日本語で短い小説や章をまとめて書くAIです。" },
+          { role: "system", content: systemPrompt },
           { role: "user", content: prompt },
         ],
         temperature: 0.8,
@@ -126,3 +130,87 @@ ${entriesText}
     );
   }
 });
+
+/**
+ * 1週間分の entries から、その週の「気分の平均」として支配的な文体スタイルを推定する。
+ * - entries[i].style や entries[i].writing_style を見て、もっとも頻出したものを返す。
+ * - 何もなければ undefined。
+ */
+function inferDominantStyle(entries: any[]): string | undefined {
+  const counter: Record<string, number> = {};
+
+  for (const e of entries) {
+    const raw =
+      (e?.style ??
+        (e as { writing_style?: string | null }).writing_style) ?? null;
+
+    if (!raw) continue;
+
+    const key = String(raw).trim();
+    if (!key) continue;
+
+    counter[key] = (counter[key] ?? 0) + 1;
+  }
+
+  const list = Object.entries(counter);
+  if (list.length === 0) return undefined;
+
+  list.sort((a, b) => b[1] - a[1]);
+  return list[0][0];
+}
+
+/**
+ * 週の特別章用の system プロンプトを、A/B/C スタイルに合わせて組み立てる。
+ * - A: やわらか文学系・現代カジュアル・少しファンタジー
+ * - B: 詩的描写・夜の静けさ・やさしい日常
+ * - C: どこか切ない・前向きポジティブ・物語風ファンタジー
+ * - 未指定や不明な場合は A に寄せる。
+ */
+function buildSystemPromptForWeekly(style: string | undefined): string {
+  const baseTail =
+    "ユーザーの1週間分のエピソードをもとに、『第○週 まとめ章（特別章）』となる短い小説風テキストを書きます。" +
+    "出力は必ず JSON 形式で { \"title\": string, \"body\": string } のみを返してください。";
+
+  if (!style) {
+    return (
+      "あなたは日本語で、やわらか文学系・現代カジュアル・少しファンタジーの文体で短い章を書いていく作家です。" +
+      baseTail
+    );
+  }
+
+  const raw = style.trim();
+  const upper = raw.toUpperCase();
+  const lower = raw.toLowerCase();
+
+  // A / soft = やわらか文学系・現代カジュアル・少しファンタジー
+  if (upper === "A" || lower === "soft") {
+    return (
+      "あなたは日本語で、やわらか文学系・現代カジュアル・少しファンタジーの文体で短い章を書いていく作家です。" +
+      baseTail
+    );
+  }
+
+  // B / poetic = 詩的描写・夜の静けさ・やさしい日常
+  if (upper === "B" || lower === "poetic") {
+    return (
+      "あなたは日本語で、詩的描写・夜の静けさ・やさしい日常の文体で短い章を書いていく作家です。" +
+      "情景描写や静けさ、余韻を大切にしてください。" +
+      baseTail
+    );
+  }
+
+  // C / dramatic = どこか切ない・前向きポジティブ・物語風ファンタジー
+  if (upper === "C" || lower === "dramatic") {
+    return (
+      "あなたは日本語で、どこか切ない・前向きポジティブ・物語風ファンタジーの文体で短い章を書いていく作家です。" +
+      "心の揺れやドラマ性を丁寧に描きながら、小さな希望が残るようにしてください。" +
+      baseTail
+    );
+  }
+
+  // 想定外 → A に寄せる
+  return (
+    "あなたは日本語で、やわらか文学系・現代カジュアル・少しファンタジーの文体で短い章を書いていく作家です。" +
+    baseTail
+  );
+}

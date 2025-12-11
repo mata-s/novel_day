@@ -20,6 +20,7 @@ class _TodayPageState extends State<TodayPage> {
   bool _isLoading = false;
   bool _canGenerateWeekly = false;
   bool _canGenerateMonthly = false;
+  bool _fabExpanded = false;
 
   @override
   void initState() {
@@ -658,31 +659,84 @@ class _TodayPageState extends State<TodayPage> {
   // ===============================
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return Scaffold(
-      floatingActionButton: (_canGenerateWeekly || _canGenerateMonthly)
-          ? Column(
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+      floatingActionButton: !(_canGenerateWeekly || _canGenerateMonthly)
+          ? null
+          : Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                if (_canGenerateMonthly)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 8.0),
-                    child: FloatingActionButton.extended(
-                      onPressed:
-                          _isLoading ? null : _generateMonthlyChapter,
-                      icon: const Icon(Icons.menu_book),
-                      label: const Text('月の短編'),
-                    ),
+                // 展開メニュー（上にふわっと出る）
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 200),
+                  child: !_fabExpanded
+                      ? const SizedBox.shrink()
+                      : Padding(
+                          padding:
+                              const EdgeInsets.only(bottom: 8.0, right: 4.0),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              if (_canGenerateMonthly)
+                                Padding(
+                                  padding:
+                                      const EdgeInsets.only(bottom: 8.0),
+                                  child: FloatingActionButton.extended(
+                                    heroTag: 'fab_month_short',
+                                    onPressed: _isLoading
+                                        ? null
+                                        : () async {
+                                            setState(
+                                                () => _fabExpanded = false);
+                                            await _generateMonthlyChapter();
+                                          },
+                                    icon: const Icon(Icons.menu_book),
+                                    label: const Text('月の短編'),
+                                    backgroundColor:
+                                        theme.colorScheme.primaryContainer,
+                                  ),
+                                ),
+                              if (_canGenerateWeekly)
+                                FloatingActionButton.extended(
+                                  heroTag: 'fab_week_summary',
+                                  onPressed: _isLoading
+                                      ? null
+                                      : () async {
+                                          setState(
+                                              () => _fabExpanded = false);
+                                          await _generateWeeklyChapter();
+                                        },
+                                  icon: const Icon(Icons.auto_stories),
+                                  label: const Text('週のまとめ章'),
+                                  backgroundColor:
+                                      theme.colorScheme.secondaryContainer,
+                                ),
+                            ],
+                          ),
+                        ),
+                ),
+
+                // メインの + FAB
+                FloatingActionButton(
+                  heroTag: 'fab_main',
+                  onPressed: () {
+                    setState(() {
+                      _fabExpanded = !_fabExpanded;
+                    });
+                  },
+                  backgroundColor: theme.colorScheme.primary,
+                  child: AnimatedRotation(
+                    duration: const Duration(milliseconds: 200),
+                    turns: _fabExpanded ? 0.125 : 0.0,
+                    child: const Icon(Icons.add),
                   ),
-                if (_canGenerateWeekly)
-                  FloatingActionButton.extended(
-                    onPressed: _isLoading ? null : _generateWeeklyChapter,
-                    icon: const Icon(Icons.auto_stories),
-                    label: const Text('週のまとめ章'),
-                  ),
+                ),
               ],
-            )
-          : null,
+            ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
         child: _generatedTitle == null || _generatedBody == null

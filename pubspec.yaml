@@ -64,6 +64,8 @@ flutter:
   assets:
     - assets/lottie/writing_book1.json
     - assets/lottie/writing_book2.json
+    - assets/book_shelf.png
+    - assets/book_original.png
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
