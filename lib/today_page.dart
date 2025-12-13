@@ -37,6 +37,18 @@ class _TodayPageState extends State<TodayPage> {
   }
 
   // ===============================
+  // JST日付キー（YYYY-MM-DD）
+  // - 日本時間の0:00で日付が切り替わる「今日」判定用
+  // ===============================
+  String _jstDateKey([DateTime? base]) {
+    final local = base ?? DateTime.now();
+    final y = local.year.toString().padLeft(4, '0');
+    final m = local.month.toString().padLeft(2, '0');
+    final d = local.day.toString().padLeft(2, '0');
+    return '$y-$m-$d';
+  }
+
+  // ===============================
   // 週の開始（月曜）を求める
   // ===============================
   DateTime _startOfWeek(DateTime dt) {
@@ -206,17 +218,14 @@ class _TodayPageState extends State<TodayPage> {
     }
 
     try {
-      final now = DateTime.now();
-      final startOfDay = DateTime(now.year, now.month, now.day);
-      final endOfDay = startOfDay.add(const Duration(days: 1));
+      final todayKey = _jstDateKey();
 
       final res = await client
           .from('entries')
           .select()
           .eq('user_id', user.id)
           .eq('chapter_type', 'daily')
-          .gte('created_at', startOfDay.toUtc().toIso8601String())
-          .lt('created_at', endOfDay.toUtc().toIso8601String())
+          .eq('date_key', todayKey)
           .order('created_at', ascending: false)
           .limit(1);
 
@@ -236,6 +245,10 @@ class _TodayPageState extends State<TodayPage> {
         _generatedTitle = title;
         _generatedBody = body;
       });
+
+      // カード表示時でも週・月ボタンを再判定する
+      await _updateWeeklyButtonState();
+      await _updateMonthlyButtonState();
     } catch (e) {
       // エラー時は何もしない（メモ入力UIのまま）
       debugPrint('Failed to load today entry: $e');
@@ -384,7 +397,7 @@ class _TodayPageState extends State<TodayPage> {
         'chapter_type': 'weekly',
         'week_start_date': lastWeekStartStr,
         'volume': volumeNumber,
-        'created_at': DateTime.now().toIso8601String(),
+        'created_at': DateTime.now().toUtc().toIso8601String(),
       });
 
       await _updateWeeklyButtonState();
@@ -537,7 +550,7 @@ class _TodayPageState extends State<TodayPage> {
         'body': body,
         'chapter_type': 'monthly',
         'month_start_date': monthStartStr,
-        'created_at': DateTime.now().toIso8601String(),
+        'created_at': DateTime.now().toUtc().toIso8601String(),
       });
 
       await _updateMonthlyButtonState();
@@ -634,7 +647,8 @@ class _TodayPageState extends State<TodayPage> {
         'title': title,
         'body': body,
         'chapter_type': 'daily',
-        'created_at': DateTime.now().toIso8601String(),
+        'date_key': _jstDateKey(),
+        'created_at': DateTime.now().toUtc().toIso8601String(),
       });
 
       setState(() {

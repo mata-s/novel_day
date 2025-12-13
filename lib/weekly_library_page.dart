@@ -249,7 +249,7 @@ class _WeeklyLibraryPageState extends State<WeeklyLibraryPage> {
             month: m,
             weeks: (byMonth[m]!..sort(
                   (a, b) => a.startDate.compareTo(b.startDate),
-                ))!,
+                )),
           ),
         )
         .toList();

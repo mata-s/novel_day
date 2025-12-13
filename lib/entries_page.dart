@@ -28,6 +28,7 @@ class _EntriesPageState extends State<EntriesPage> {
 
   Future<void> _loadYearMonthOptionsAndEntries() async {
     await _loadYearMonthOptions();
+    if (!mounted) return;
     await _loadEntries();
   }
 
@@ -36,6 +37,7 @@ class _EntriesPageState extends State<EntriesPage> {
     final user = client.auth.currentUser;
 
     if (user == null) {
+      if (!mounted) return;
       setState(() {
         _availableYears = [];
         _availableMonthsByYear = {};
@@ -48,6 +50,8 @@ class _EntriesPageState extends State<EntriesPage> {
           .from('entries')
           .select('created_at, week_start_date, month_start_date')
           .eq('user_id', user.id);
+
+          if (!mounted) return;
 
       final yearSet = <int>{};
       final monthMap = <int, Set<int>>{};
@@ -97,6 +101,7 @@ class _EntriesPageState extends State<EntriesPage> {
         }
       }
 
+      if (!mounted) return;
       setState(() {
         _availableYears = years;
         _availableMonthsByYear = monthsByYear;
@@ -114,6 +119,7 @@ class _EntriesPageState extends State<EntriesPage> {
     final user = client.auth.currentUser;
 
     if (user == null) {
+      if (!mounted) return;
       setState(() {
         _entries = [];
         _isLoading = false;
@@ -138,6 +144,8 @@ class _EntriesPageState extends State<EntriesPage> {
           .lt('created_at', end.toIso8601String())
           .order('created_at', ascending: false);
 
+          if (!mounted) return;
+
       final list = (data as List)
           .cast<Map<String, dynamic>>()
           .where((row) =>
@@ -147,6 +155,7 @@ class _EntriesPageState extends State<EntriesPage> {
               row['month_start_date'] == null)
           .toList();
 
+      if (!mounted) return;
       setState(() {
         _entries = list;
         _isLoading = false;
