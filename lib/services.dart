@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:purchases_flutter/purchases_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:flutter/services.dart';
 
 class PremiumPage extends StatefulWidget {
   const PremiumPage({super.key});
@@ -89,19 +90,27 @@ class _PremiumPageState extends State<PremiumPage> {
       await PremiumManager.refresh();
       if (!mounted) return;
       setState(() {});
-    } on PurchasesErrorCode catch (e) {
-      // purchases_flutter は例外が PlatformException になることがあるため、ここには来にくい
+    } on PlatformException catch (e) {
+      // purchases_flutter は PlatformException を投げる
+      final code = PurchasesErrorHelper.getErrorCode(e);
+
+      // ✅ ユーザーキャンセルは「通常の終了」扱い（赤エラーは出さない）
+      if (code == PurchasesErrorCode.purchaseCancelledError) {
+        // 必要なら軽い通知だけ
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('購入をキャンセルしました')),
+          );
+        }
+        return;
+      }
+
       if (!mounted) return;
       setState(() => _error = '購入に失敗しました: $e');
     } catch (e) {
-      // ユーザーキャンセルはエラー扱いにしない
-      final msg = e.toString();
-      if (msg.contains('purchaseCancelledError') || msg.contains('PurchaseCancelled')) {
-        // no-op
-      } else {
-        if (!mounted) return;
-        setState(() => _error = '購入に失敗しました: $e');
-      }
+      // その他の例外
+      if (!mounted) return;
+      setState(() => _error = '購入に失敗しました: $e');
     } finally {
       if (!mounted) return;
       setState(() {
