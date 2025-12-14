@@ -1,9 +1,15 @@
 import 'dart:async';
+import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show kReleaseMode;
+import 'package:google_mobile_ads/google_mobile_ads.dart';
+
+import 'services.dart';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:lottie/lottie.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class TodayPage extends StatefulWidget {
   const TodayPage({super.key});
@@ -13,6 +19,29 @@ class TodayPage extends StatefulWidget {
 }
 
 class _TodayPageState extends State<TodayPage> {
+  // ===============================
+  // Premium / Ads
+  // ===============================
+  bool _isPremium = false;
+  late final VoidCallback _premiumListener;
+
+  InterstitialAd? _interstitialAd;
+  bool _isLoadingAd = false;
+
+  // ✅ 本番用（自分の AdMob ユニットIDに置き換えてください）
+  static const String _iosProdInterstitialId = 'ca-app-pub-8925550821145779/3697543094';
+  static const String _androidProdInterstitialId = 'ca-app-pub-xxxxxxxxxxxxxxxx/xxxxxxxxxx';
+
+  String get _interstitialUnitId {
+    if (!kReleaseMode) {
+      // テスト用（Google 公式のテストID）
+      return Platform.isIOS
+          ? 'ca-app-pub-3940256099942544/4411468910'
+          : 'ca-app-pub-3940256099942544/1033173712';
+    }
+    // 本番用
+    return Platform.isIOS ? _iosProdInterstitialId : _androidProdInterstitialId;
+  }
   final TextEditingController _memoController = TextEditingController();
   String _selectedStyle = 'A';
   String? _generatedTitle;
@@ -22,18 +51,134 @@ class _TodayPageState extends State<TodayPage> {
   bool _canGenerateMonthly = false;
   bool _fabExpanded = false;
 
+  // ===============================
+  // Free trial for special chapters (weekly/monthly)
+  // ===============================
+  static const String _kFreeWeeklyUsed = 'free_weekly_used';
+  static const String _kFreeMonthlyUsed = 'free_monthly_used';
+
+  Future<bool> _isFreeUsed(String key) async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(key) ?? false;
+  }
+
+  Future<void> _setFreeUsed(String key) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(key, true);
+  }
+
+  void _openPremiumPage() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const PremiumPage()),
+    );
+  }
+
+  /// 非プレミアムのとき、無料枠が終わっていたらプレミアム誘導する。
+  /// true を返したら「処理は続行してOK」
+  Future<bool> _guardSpecialOrUpsell({required String type}) async {
+    if (_isPremium) return true;
+
+    final used = await _isFreeUsed(
+      type == 'weekly' ? _kFreeWeeklyUsed : _kFreeMonthlyUsed,
+    );
+
+    if (!mounted) return false;
+
+    if (used) {
+      _openPremiumPage();
+      return false;
+    }
+
+    return true;
+  }
+
   @override
   void initState() {
     super.initState();
+    _isPremium = PremiumManager.isPremium.value;
+    _premiumListener = () async {
+      if (!mounted) return;
+      setState(() {
+        _isPremium = PremiumManager.isPremium.value;
+      });
+      // プレミアム化したら、週/月の表示可否も即反映
+      await _updateWeeklyButtonState();
+      await _updateMonthlyButtonState();
+    };
+    PremiumManager.isPremium.addListener(_premiumListener);
     _updateWeeklyButtonState();
     _updateMonthlyButtonState();
     _loadTodayEntry();
+    // おまけ: initStateで広告先読み
+    unawaited(_loadInterstitial());
   }
 
   @override
   void dispose() {
+    PremiumManager.isPremium.removeListener(_premiumListener);
+    _interstitialAd?.dispose();
     _memoController.dispose();
     super.dispose();
+  }
+  // ===============================
+  // 広告ロード＆表示
+  // ===============================
+  Future<void> _loadInterstitial() async {
+    if (_interstitialAd != null || _isLoadingAd) return;
+    _isLoadingAd = true;
+
+    final completer = Completer<void>();
+
+    InterstitialAd.load(
+      adUnitId: _interstitialUnitId,
+      request: const AdRequest(),
+      adLoadCallback: InterstitialAdLoadCallback(
+        onAdLoaded: (ad) {
+          _interstitialAd = ad;
+          _isLoadingAd = false;
+          completer.complete();
+        },
+        onAdFailedToLoad: (error) {
+          debugPrint('❌ Interstitial failed to load: $error');
+          _interstitialAd = null;
+          _isLoadingAd = false;
+          completer.complete();
+        },
+      ),
+    );
+
+    await completer.future;
+  }
+
+  Future<void> _showAdForNonPremium() async {
+    // プレミアムなら広告なし
+    if (_isPremium) return;
+
+    await _loadInterstitial();
+    final ad = _interstitialAd;
+    if (ad == null) return;
+
+    final completer = Completer<void>();
+
+    ad.fullScreenContentCallback = FullScreenContentCallback(
+      onAdDismissedFullScreenContent: (ad) {
+        ad.dispose();
+        _interstitialAd = null;
+        completer.complete();
+      },
+      onAdFailedToShowFullScreenContent: (ad, error) {
+        debugPrint('❌ Interstitial failed to show: $error');
+        ad.dispose();
+        _interstitialAd = null;
+        completer.complete();
+      },
+    );
+
+    ad.show();
+    await completer.future;
+
+    // 次回のために裏で先読み（待たない）
+    unawaited(_loadInterstitial());
   }
 
   // ===============================
@@ -126,7 +271,8 @@ class _TodayPageState extends State<TodayPage> {
 
       if (!mounted) return;
       setState(() {
-        _canGenerateWeekly = (weekly == null);
+        // プレミアムなら作成済みでも生成できる（何度でも）
+        _canGenerateWeekly = _isPremium ? true : (weekly == null);
       });
     } catch (_) {
       if (!mounted) return;
@@ -196,7 +342,8 @@ class _TodayPageState extends State<TodayPage> {
 
       if (!mounted) return;
       setState(() {
-        _canGenerateMonthly = (monthly == null);
+        // プレミアムなら作成済みでも生成できる（何度でも）
+        _canGenerateMonthly = _isPremium ? true : (monthly == null);
       });
     } catch (_) {
       if (!mounted) return;
@@ -400,6 +547,11 @@ class _TodayPageState extends State<TodayPage> {
         'created_at': DateTime.now().toUtc().toIso8601String(),
       });
 
+      // 非プレミアムは無料枠（各1回）を消費
+      if (!_isPremium) {
+        await _setFreeUsed(_kFreeWeeklyUsed);
+      }
+
       await _updateWeeklyButtonState();
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -553,6 +705,11 @@ class _TodayPageState extends State<TodayPage> {
         'created_at': DateTime.now().toUtc().toIso8601String(),
       });
 
+      // 非プレミアムは無料枠（各1回）を消費
+      if (!_isPremium) {
+        await _setFreeUsed(_kFreeMonthlyUsed);
+      }
+
       await _updateMonthlyButtonState();
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -570,7 +727,7 @@ class _TodayPageState extends State<TodayPage> {
   }
 
   // ===============================
-  // 今日の小説生成（既存機能）
+  // 今日の小説生成（既存機能＋広告）
   // ===============================
   Future<void> _onGeneratePressed() async {
     final memo = _memoController.text.trim();
@@ -580,6 +737,9 @@ class _TodayPageState extends State<TodayPage> {
       );
       return;
     }
+
+    // ✅ 非プレミアムは広告を表示してから生成
+    await _showAdForNonPremium();
 
     setState(() {
       _isLoading = true;
@@ -706,6 +866,12 @@ class _TodayPageState extends State<TodayPage> {
                                         : () async {
                                             setState(
                                                 () => _fabExpanded = false);
+
+                                            final ok =
+                                                await _guardSpecialOrUpsell(
+                                                    type: 'monthly');
+                                            if (!ok) return;
+
                                             await _generateMonthlyChapter();
                                           },
                                     icon: const Icon(Icons.menu_book),
@@ -722,6 +888,12 @@ class _TodayPageState extends State<TodayPage> {
                                       : () async {
                                           setState(
                                               () => _fabExpanded = false);
+
+                                          final ok =
+                                              await _guardSpecialOrUpsell(
+                                                  type: 'weekly');
+                                          if (!ok) return;
+
                                           await _generateWeeklyChapter();
                                         },
                                   icon: const Icon(Icons.auto_stories),

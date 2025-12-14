@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:novel_day/entries_page.dart';
 import 'package:novel_day/library_page.dart';
 import 'package:novel_day/today_page.dart';
+import 'package:novel_day/settings_page.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -18,6 +19,7 @@ class _HomeScreenState extends State<HomeScreen> {
     TodayPage(),
     EntriesPage(),
     LibraryPage(),
+    SettingsPage(),
   ];
 @override
 Widget build(BuildContext context) {
@@ -76,6 +78,11 @@ Widget build(BuildContext context) {
                 selectedIcon: Icon(Icons.menu_book),
                 label: '本棚',
               ),
+              NavigationDestination(
+                icon: Icon(Icons.settings_outlined),
+                selectedIcon: Icon(Icons.settings),
+                label: '設定',
+              ),
             ],
           ),
   );
@@ -89,6 +96,8 @@ Widget build(BuildContext context) {
         return 'NovelDay - 記録';
       case 2:
         return 'NovelDay - 本棚';
+      case 3:
+        return 'NovelDay - 設定';
       default:
         return 'NovelDay';
     }
