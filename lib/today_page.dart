@@ -1203,6 +1203,16 @@ class _GeneratingDialogState extends State<GeneratingDialog> {
                       return Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
+                          Text(
+                            '物語を丁寧に紡いでいます。\n生成が終わるまで、画面を閉じずにお待ちください。',
+                            textAlign: TextAlign.center,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              fontWeight: FontWeight.w800,
+                              color: Colors.black87,
+                              height: 1.35,
+                            ),
+                          ),
+                          const SizedBox(height: 16),
                           SizedBox(
                             height: lottieHeight,
                             child: Lottie.asset(
