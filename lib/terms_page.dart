@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 class TermsPage extends StatelessWidget {
   const TermsPage({super.key});
 
-  static const String _effectiveDate = '2025-12-15'; // 必要なら変更
+  static const String _effectiveDate = '2025-12-17'; // 必要なら変更
 
   @override
   Widget build(BuildContext context) {

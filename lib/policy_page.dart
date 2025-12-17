@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 class PrivacyPolicyPage extends StatelessWidget {
   const PrivacyPolicyPage({super.key});
 
-  static const String _effectiveDate = '2025-12-15'; // 必要に応じて変更
+  static const String _effectiveDate = '2025-12-17'; // 必要に応じて変更
 
   @override
   Widget build(BuildContext context) {
