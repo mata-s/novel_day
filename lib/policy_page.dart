@@ -7,6 +7,7 @@ class PrivacyPolicyPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // ignore: unused_local_variable
     final cs = Theme.of(context).colorScheme;
 
     return Scaffold(
@@ -124,7 +125,13 @@ class PrivacyPolicyPage extends StatelessWidget {
             const _Section(
               title: '10. お問い合わせ',
               children: [
-                _P('運営者情報やお問い合わせ先は、アプリの提供形態に合わせて追記してください。'),
+                _P(
+                  '本サービスに関するお問い合わせ、データ削除のご要望等は、以下のメールアドレスまでご連絡ください。',
+                ),
+                _P(
+                  'お問い合わせ窓口（運営者メール）：splingnew@gmail.com\n'
+                  '※ ご連絡の際は、ユーザーIDを記載いただくと対応がスムーズです。',
+                ),
               ],
             ),
 
@@ -137,24 +144,6 @@ class PrivacyPolicyPage extends StatelessWidget {
             ),
             const SizedBox(height: 8),
 
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: cs.surfaceContainerHighest.withOpacity(0.25),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: Theme.of(context).dividerColor.withOpacity(0.4),
-                ),
-              ),
-              child: Text(
-                '※ 本文は雛形です。実際に利用する外部サービスや連絡先に合わせて調整してください。',
-                style: Theme.of(context)
-                    .textTheme
-                    .bodySmall
-                    ?.copyWith(color: cs.onSurfaceVariant),
-                textAlign: TextAlign.center,
-              ),
-            ),
           ],
         ),
       ),

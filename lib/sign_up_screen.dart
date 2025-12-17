@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'home.dart';
 import 'login_screen.dart';
 
 class SignUpScreen extends StatefulWidget {
@@ -69,7 +70,12 @@ class _SignUpScreenState extends State<SignUpScreen> {
       await prefs.setBool('has_registered', true);
 
       await widget.onRegistered?.call();
-      // 遷移しない：AuthGate が auth 状態変化で自動切替
+
+      if (!mounted) return;
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const HomeScreen()),
+        (route) => false,
+      );
     } catch (e) {
       if (!mounted) return;
       setState(() => _error = '開始に失敗しました: $e');

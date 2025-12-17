@@ -1,5 +1,3 @@
-
-
 import 'package:flutter/material.dart';
 
 class TermsPage extends StatelessWidget {
@@ -9,6 +7,7 @@ class TermsPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // ignore: unused_local_variable
     final cs = Theme.of(context).colorScheme;
 
     return Scaffold(
@@ -143,24 +142,14 @@ class TermsPage extends StatelessWidget {
                 _P('本規約は日本法を準拠法とし、本サービスに関して紛争が生じた場合、運営者所在地を管轄する裁判所を専属的合意管轄とします。'),
               ],
             ),
-            const SizedBox(height: 18),
+            const _Divider(),
 
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: cs.surfaceContainerHighest.withOpacity(0.35),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: Theme.of(context).dividerColor.withOpacity(0.4),
-                ),
-              ),
-              child: Text(
-                '運営者情報やお問い合わせ先は、アプリの提供形態に合わせて追記してください。',
-                style: Theme.of(context)
-                    .textTheme
-                    .bodySmall
-                    ?.copyWith(color: cs.onSurfaceVariant),
-              ),
+            const _Section(
+              title: 'お問い合わせ',
+              children: [
+                _P('本サービスに関するお問い合わせは、以下のメールアドレスまでご連絡ください。'),
+                _P('お問い合わせ窓口（運営者メール）：splingnew@gmail.com\n※ ご連絡の際は、ユーザーIDを記載いただくと対応がスムーズです。'),
+              ],
             ),
             const SizedBox(height: 24),
             Center(

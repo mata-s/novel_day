@@ -27,6 +27,7 @@ class _LibraryPageState extends State<LibraryPage> {
     final user = client.auth.currentUser;
 
     if (user == null) {
+      if (!mounted) return;
       setState(() {
         _yearOptions = [];
         _selectedYear = null;
@@ -56,6 +57,7 @@ class _LibraryPageState extends State<LibraryPage> {
       if (years.isEmpty) {
         // データが1件もない場合は「今年のみ」を選択肢として持たせる
         final now = DateTime.now();
+        if (!mounted) return;
         setState(() {
           _yearOptions = [now.year];
           _selectedYear = now.year;
@@ -69,6 +71,7 @@ class _LibraryPageState extends State<LibraryPage> {
       // デフォルトは最新年
       final latestYear = sortedYears.last;
 
+      if (!mounted) return;
       setState(() {
         _yearOptions = sortedYears;
         _selectedYear = latestYear;
@@ -78,6 +81,7 @@ class _LibraryPageState extends State<LibraryPage> {
       await _loadAvailableMonths();
     } catch (e) {
       // 失敗時は一旦空状態にしておく
+      if (!mounted) return;
       setState(() {
         _yearOptions = [];
         _selectedYear = null;
@@ -91,6 +95,7 @@ class _LibraryPageState extends State<LibraryPage> {
     final user = client.auth.currentUser;
 
     if (user == null || _selectedYear == null) {
+      if (!mounted) return;
       setState(() {
         _availableMonths = {};
       });
@@ -120,11 +125,13 @@ class _LibraryPageState extends State<LibraryPage> {
         months.add(dt.month);
       }
 
+      if (!mounted) return;
       setState(() {
         _availableMonths = months;
       });
     } catch (e) {
       // 失敗した場合はとりあえず空にしておく
+      if (!mounted) return;
       setState(() {
         _availableMonths = {};
       });

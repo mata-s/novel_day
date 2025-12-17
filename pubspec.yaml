@@ -21,6 +21,7 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^4.0.0
+  flutter_launcher_icons: ^0.13.1
 
 flutter:
   uses-material-design: true
@@ -29,3 +30,11 @@ flutter:
     - assets/lottie/writing_book2.json
     - assets/book_shelf.png
     - assets/book_original.png
+    - assets/icon.png
+    - assets/icon_opening.png
+
+flutter_icons:
+  android: true
+  ios: true
+  image_path: "assets/icon.png"
+  remove_alpha_ios: true

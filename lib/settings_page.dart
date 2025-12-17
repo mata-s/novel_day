@@ -5,6 +5,7 @@ import 'package:novel_day/terms_page.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:novel_day/transfer_page.dart';
 import 'package:novel_day/edit_profile_page.dart';
+import 'package:novel_day/transfer_login_page.dart';
 
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
@@ -79,6 +80,22 @@ class SettingsPage extends StatelessWidget {
                 onTap: () {
                   Navigator.of(context).push(
                     MaterialPageRoute(builder: (_) => const TransferPage()),
+                  );
+                },
+              ),
+              const _Divider(),
+              _ModernTile(
+                leading: _IconBubble(
+                  icon: Icons.login_rounded,
+                  background: cs.secondaryContainer,
+                  foreground: cs.onSecondaryContainer,
+                ),
+                title: '引き継ぎでログイン',
+                subtitle: '設定済みのメールアドレスでログイン',
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const TransferLoginPage()),
                   );
                 },
               ),

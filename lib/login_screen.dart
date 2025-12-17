@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'sign_up_screen.dart';
+import 'home.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -23,6 +24,34 @@ class _LoginScreenState extends State<LoginScreen> {
     _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
+  }
+
+  String _friendlyAuthError(Object e) {
+    // Supabase Auth の代表的なエラーを日本語に変換
+    final msg = e.toString();
+
+    // 無効な資格情報（メール or パスワード違い）
+    if (msg.contains('Invalid login credentials') ||
+        msg.contains('invalid_credentials')) {
+      return 'メールアドレスまたはパスワードが間違っています。';
+    }
+
+    // メール未確認
+    if (msg.contains('Email not confirmed') || msg.contains('email_not_confirmed')) {
+      return 'メールアドレスの確認が完了していません。受信メールのリンクを確認してください。';
+    }
+
+    // レート制限など
+    if (msg.contains('rate limit') || msg.contains('too_many_requests')) {
+      return '試行回数が多すぎます。しばらく待ってからお試しください。';
+    }
+
+    // ネットワーク系
+    if (msg.contains('SocketException') || msg.contains('Failed host lookup')) {
+      return '通信に失敗しました。ネットワーク状況を確認してください。';
+    }
+
+    return 'ログインに失敗しました。入力内容を確認してもう一度お試しください。';
   }
 
   Future<void> _signInWithEmail() async {
@@ -49,9 +78,17 @@ class _LoginScreenState extends State<LoginScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('ログインしました')),
       );
+
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const HomeScreen()),
+        (route) => false,
+      );
+    } on AuthException catch (e) {
+      if (!mounted) return;
+      setState(() => _error = _friendlyAuthError(e));
     } catch (e) {
       if (!mounted) return;
-      setState(() => _error = 'ログインに失敗しました: $e');
+      setState(() => _error = _friendlyAuthError(e));
     } finally {
       if (!mounted) return;
       setState(() => _loading = false);

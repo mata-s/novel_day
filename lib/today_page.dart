@@ -50,6 +50,7 @@ class _TodayPageState extends State<TodayPage> {
   bool _canGenerateWeekly = false;
   bool _canGenerateMonthly = false;
   bool _fabExpanded = false;
+  bool _initialLoadingToday = true;
 
   // ===============================
   // Free trial for special chapters (weekly/monthly)
@@ -361,6 +362,10 @@ class _TodayPageState extends State<TodayPage> {
     final user = client.auth.currentUser;
 
     if (user == null) {
+      if (!mounted) return;
+      setState(() {
+        _initialLoadingToday = false;
+      });
       return;
     }
 
@@ -379,7 +384,13 @@ class _TodayPageState extends State<TodayPage> {
       final list = (res as List).cast<Map<String, dynamic>>();
 
       if (list.isEmpty) {
-        // 今日まだ小説がなければ何もしない（メモ入力UIを出す）
+        // 今日まだ小説がなければメモ入力UIを出す（初回チラつき防止のためフラグを落とす）
+        if (!mounted) return;
+        setState(() {
+          _initialLoadingToday = false;
+          _generatedTitle = null;
+          _generatedBody = null;
+        });
         return;
       }
 
@@ -389,6 +400,7 @@ class _TodayPageState extends State<TodayPage> {
 
       if (!mounted) return;
       setState(() {
+        _initialLoadingToday = false;
         _generatedTitle = title;
         _generatedBody = body;
       });
@@ -397,8 +409,11 @@ class _TodayPageState extends State<TodayPage> {
       await _updateWeeklyButtonState();
       await _updateMonthlyButtonState();
     } catch (e) {
-      // エラー時は何もしない（メモ入力UIのまま）
       debugPrint('Failed to load today entry: $e');
+      if (!mounted) return;
+      setState(() {
+        _initialLoadingToday = false;
+      });
     }
   }
 
@@ -925,8 +940,13 @@ class _TodayPageState extends State<TodayPage> {
             ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
-        child: _generatedTitle == null || _generatedBody == null
-            ? Column(
+        child: _initialLoadingToday
+            ? const SizedBox(
+                height: 280,
+                child: Center(child: CircularProgressIndicator()),
+              )
+            : (_generatedTitle == null || _generatedBody == null)
+                ? Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
@@ -1008,7 +1028,7 @@ class _TodayPageState extends State<TodayPage> {
                   ),
                 ],
               )
-            : Column(
+                : Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Card(

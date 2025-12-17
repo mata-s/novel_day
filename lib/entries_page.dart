@@ -708,14 +708,15 @@ class _EntriesPageState extends State<EntriesPage> {
                       : () => _showYearPicker(context),
                   child: InputDecorator(
                     isEmpty: _availableYears.isEmpty,
-                    decoration: const InputDecoration(
-                      labelText: '年',
-                      border: OutlineInputBorder(),
+                    decoration: InputDecoration(
+                      labelText: _availableYears.isEmpty ? null : '年',
+                      hintText: _availableYears.isEmpty ? 'データなし' : null,
+                      border: const OutlineInputBorder(),
                       contentPadding:
-                          EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     ),
                     child: Text(
-                      _availableYears.isEmpty ? 'データなし' : '$_selectedYear年',
+                      _availableYears.isEmpty ? '' : '$_selectedYear年',
                       style: Theme.of(context).textTheme.bodyMedium,
                     ),
                   ),
@@ -729,14 +730,15 @@ class _EntriesPageState extends State<EntriesPage> {
                       : () => _showMonthPicker(context),
                   child: InputDecorator(
                     isEmpty: monthsForYear.isEmpty,
-                    decoration: const InputDecoration(
-                      labelText: '月',
-                      border: OutlineInputBorder(),
+                    decoration: InputDecoration(
+                      labelText: monthsForYear.isEmpty ? null : '月',
+                      hintText: monthsForYear.isEmpty ? '—' : null,
+                      border: const OutlineInputBorder(),
                       contentPadding:
-                          EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     ),
                     child: Text(
-                      monthsForYear.isEmpty ? '—' : '$_selectedMonth月',
+                      monthsForYear.isEmpty ? '' : '$_selectedMonth月',
                       style: Theme.of(context).textTheme.bodyMedium,
                     ),
                   ),
