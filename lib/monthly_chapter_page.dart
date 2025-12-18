@@ -463,6 +463,39 @@ class VerticalTextView extends StatelessWidget {
   final TextStyle style;
   final int? maxCharsPerColumn;
 
+    // ====== Kinsoku (禁則処理) ======
+  // 「行頭禁則」: 列の先頭に来てほしくない記号類（句読点・中点・閉じ括弧など）
+  static const Set<String> _kinsokuLineStart = {
+    // punctuation / dots
+    '、', '。', '，', '．', '・', '｡', '､', '：', '；', '！', '？', '‼', '⁇', '…', '‥',
+    // closing quotes / brackets
+    '」', '』', '）', ')', '】', '〕', '〉', '》', '］', ']', '｝', '}',
+    // dashes / waves
+    'ー', '―', '-', '〜', '～',
+    // quotes
+    '’', '”',
+  };
+
+  List<List<String>> _applyKinsoku(List<List<String>> columns) {
+    if (columns.isEmpty) return columns;
+
+    // 先頭列（右端）の先頭には前列が無いのでスキップ
+    for (int i = 1; i < columns.length; i++) {
+      // その列が空ならスキップ
+      if (columns[i].isEmpty) continue;
+
+      // 列頭が禁則文字で、前の列に文字があるなら、前の列末尾へ移動
+      while (columns[i].isNotEmpty &&
+          _kinsokuLineStart.contains(columns[i].first) &&
+          columns[i - 1].isNotEmpty) {
+        final ch = columns[i].removeAt(0);
+        columns[i - 1].add(ch);
+      }
+    }
+    return columns;
+  }
+
+
   @override
   Widget build(BuildContext context) {
     // 改行コードは一旦削除して、連続した文字列として扱う
@@ -509,6 +542,9 @@ class VerticalTextView extends StatelessWidget {
       columns.add(chars.sublist(start, end));
       start = end;
     }
+
+    // 禁則処理：列頭に句読点や閉じ括弧が来ないように調整
+    _applyKinsoku(columns);
 
     return Align(
       // 本文ブロック全体をページ内でやや中央寄せに配置する

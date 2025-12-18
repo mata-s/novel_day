@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:purchases_flutter/purchases_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class PremiumPage extends StatefulWidget {
   const PremiumPage({super.key});
@@ -16,6 +17,22 @@ class _PremiumPageState extends State<PremiumPage> {
   bool _loading = false;
   String? _error;
   Package? _monthly;
+
+  // --- Legal links (Apple Review 3.1.2) ---
+  // TODO: Replace with your own Privacy Policy URL (must be publicly accessible).
+  static const String _privacyPolicyUrl = 'https://novel-day-privacy.vercel.app';
+  // Apple Standard EULA (recommended if you don't have custom terms)
+  static const String _termsUrl = 'https://www.apple.com/legal/internet-services/itunes/dev/stdeula/';
+
+  Future<void> _openUrl(String url) async {
+    final uri = Uri.parse(url);
+    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('リンクを開けませんでした: $url')),
+      );
+    }
+  }
 
   @override
   void initState() {
@@ -154,8 +171,14 @@ class _PremiumPageState extends State<PremiumPage> {
     final cs = Theme.of(context).colorScheme;
     final isPremium = PremiumManager.isPremium.value;
 
-    // 日本のみ販売の前提：表示価格は固定（※実際の課金額はApp Store側が確定）
-    const priceText = '月額 ¥300';
+    final product = _monthly?.storeProduct;
+
+    // Fallback price text for App Review safety
+    // NOTE: 実際の請求額はApp Store側で確定します
+    final priceText = product?.priceString ?? '月額 ¥300';
+
+    final planName = 'NovelDay プレミアム（自動更新・月額）';
+    final periodText = '1か月';
 
     return Scaffold(
       appBar: AppBar(
@@ -213,6 +236,39 @@ class _PremiumPageState extends State<PremiumPage> {
               ),
               const SizedBox(height: 16),
 
+              // ===== Plan summary (required for subscription apps) =====
+              Container(
+                padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+                decoration: BoxDecoration(
+                  color: cs.surface,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: Theme.of(context).dividerColor.withOpacity(0.5),
+                  ),
+                ),
+                child: Column(
+                  children: [
+                    Text(
+                      planName,
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context)
+                          .textTheme
+                          .titleSmall
+                          ?.copyWith(fontWeight: FontWeight.w800),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      '期間：$periodText　/　価格：$priceText',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodySmall
+                          ?.copyWith(color: cs.onSurfaceVariant),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 14),
 
               // ===== チェックリスト枠 =====
               Container(
@@ -265,18 +321,22 @@ class _PremiumPageState extends State<PremiumPage> {
                           width: 20,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : Text(isPremium ? 'プレミアムは有効です' : '$priceText でアップグレード'),
+                      : Text(isPremium ? 'プレミアムは有効です' : '$priceText で購読を開始'),
                 ),
               ),
               const SizedBox(height: 8),
               if (!isPremium)
                 Text(
-                  '自動更新のサブスクリプションです\nいつでも解約できます\n（設定 > Apple ID > サブスクリプション）',
+                  '自動更新サブスクリプションです（$periodText）\n'
+                  'お支払いは購入確定時にApple IDに請求されます。\n'
+                  '現在の期間終了の24時間以上前に解約しない限り自動更新されます。\n'
+                  '解約／管理：設定 > Apple ID > サブスクリプション\n'
+                  '表示価格は目安で、実際の請求額はApp Storeが決定します。',
                   textAlign: TextAlign.center,
                   style: Theme.of(context)
                       .textTheme
                       .bodySmall
-                      ?.copyWith(color: cs.onSurfaceVariant),
+                      ?.copyWith(color: cs.onSurfaceVariant, height: 1.45),
                 ),
               const SizedBox(height: 10),
 
@@ -290,12 +350,28 @@ class _PremiumPageState extends State<PremiumPage> {
 
               // ===== フッター（小さめの規約文） =====
               Text(
-                '購入により、利用規約およびプライバシーポリシーに同意したものとみなされます。',
+                '購入により、利用規約（EULA）およびプライバシーポリシーに同意したものとみなされます。',
                 textAlign: TextAlign.center,
                 style: Theme.of(context)
                     .textTheme
                     .bodySmall
                     ?.copyWith(color: cs.onSurfaceVariant),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                alignment: WrapAlignment.center,
+                spacing: 14,
+                runSpacing: 6,
+                children: [
+                  TextButton(
+                    onPressed: _loading ? null : () => _openUrl(_termsUrl),
+                    child: const Text('利用規約（EULA）'),
+                  ),
+                  TextButton(
+                    onPressed: _loading ? null : () => _openUrl(_privacyPolicyUrl),
+                    child: const Text('プライバシーポリシー'),
+                  ),
+                ],
               ),
             ],
           ),
