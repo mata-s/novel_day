@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'notification_service.dart';
 import 'splash_page.dart';
-// import 'auth_gate.dart';
 import 'home.dart';
 import 'services.dart';
+import 'today_page.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -19,6 +20,9 @@ void main() async {
 
   // 🔽 追加：RevenueCat 初期化
   await PremiumManager.init();
+  
+  WidgetsFlutterBinding.ensureInitialized();
+  await NotificationService.init();
 
   runApp(const MyApp());
 }
@@ -31,6 +35,15 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'NovelDay',
       theme: ThemeData(useMaterial3: true),
+
+      // ✅ 通知タップから遷移できるようにする
+      navigatorKey: NotificationService.navigatorKey,
+
+      // ✅ 通知タップで開きたいページ
+      routes: {
+        '/today': (_) => const TodayPage(),
+      },
+
       home: const SplashPage(),
     );
   }

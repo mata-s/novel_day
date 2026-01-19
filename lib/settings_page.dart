@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:novel_day/policy_page.dart';
 import 'package:novel_day/services.dart';
-import 'package:novel_day/terms_page.dart';
+import 'package:novel_day/notification_service.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:novel_day/transfer_page.dart';
 import 'package:novel_day/edit_profile_page.dart';
 import 'package:novel_day/transfer_login_page.dart';
+import 'package:novel_day/delete_account_page.dart';
 
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
@@ -99,6 +100,24 @@ class SettingsPage extends StatelessWidget {
                   );
                 },
               ),
+              const _Divider(),
+              _ModernTile(
+                leading: _IconBubble(
+                  icon: Icons.delete_outline,
+                  background: Colors.red.shade50,
+                  foreground: Colors.red,
+                ),
+                title: 'アカウント削除',
+                subtitle: 'この操作は取り消せません',
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const DeleteAccountConfirmPage(),
+                    ),
+                  );
+                },
+              ),
             ],
           ),
 
@@ -129,6 +148,30 @@ class SettingsPage extends StatelessWidget {
 
           const SizedBox(height: 22),
 
+          // ===== 通知 =====
+          const _SectionTitle('通知'),
+          const SizedBox(height: 10),
+          _SettingsCard(
+            children: [
+              _ModernTile(
+                leading: _IconBubble(
+                  icon: Icons.notifications_active_outlined,
+                  background: cs.surfaceContainerHighest,
+                  foreground: cs.onSurface,
+                ),
+                title: '毎日のリマインド',
+                subtitle: '毎日21時に通知を受け取る',
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () {
+                  NotificationService.openNotificationSettings();
+                },
+              ),
+              const _Divider(),
+            ],
+          ),
+
+          const SizedBox(height: 22),
+
           // ===== その他 =====
           const _SectionTitle('その他'),
           const SizedBox(height: 10),
@@ -143,13 +186,12 @@ class SettingsPage extends StatelessWidget {
                 title: '利用規約',
                 subtitle: 'サービスの利用条件',
                 trailing: const Icon(Icons.chevron_right),
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const TermsPage()),
-                  );
+                onTap: () async {
+                  final url = Uri.parse('https://novel-day-privacy.vercel.app/terms.html');
+                  await launchUrl(url, mode: LaunchMode.externalApplication);
                 },
               ),
-               const _Divider(),
+              const _Divider(),
               _ModernTile(
                 leading: _IconBubble(
                   icon: Icons.privacy_tip_outlined,
@@ -159,12 +201,24 @@ class SettingsPage extends StatelessWidget {
                 title: 'プライバシーポリシー',
                 subtitle: '個人情報の取り扱い',
                 trailing: const Icon(Icons.chevron_right),
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const PrivacyPolicyPage(),
-                    ),
-                  );
+                onTap: () async {
+                  final url = Uri.parse('https://novel-day-privacy.vercel.app/index.html');
+                  await launchUrl(url, mode: LaunchMode.externalApplication);
+                },
+              ),
+              const _Divider(),
+              _ModernTile(
+                leading: _IconBubble(
+                  icon: Icons.mail_outline,
+                  background: cs.surfaceContainerHighest,
+                  foreground: cs.onSurface,
+                ),
+                title: 'お問い合わせ',
+                subtitle: 'ご意見・ご質問・削除依頼',
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () async {
+                  final url = Uri.parse('https://novel-day-privacy.vercel.app/contact.html');
+                  await launchUrl(url, mode: LaunchMode.externalApplication);
                 },
               ),
             ],

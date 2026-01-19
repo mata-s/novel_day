@@ -18,10 +18,7 @@ class _PremiumPageState extends State<PremiumPage> {
   String? _error;
   Package? _monthly;
 
-  // --- Legal links (Apple Review 3.1.2) ---
-  // TODO: Replace with your own Privacy Policy URL (must be publicly accessible).
   static const String _privacyPolicyUrl = 'https://novel-day-privacy.vercel.app';
-  // Apple Standard EULA (recommended if you don't have custom terms)
   static const String _termsUrl = 'https://www.apple.com/legal/internet-services/itunes/dev/stdeula/';
 
   Future<void> _openUrl(String url) async {
@@ -183,12 +180,6 @@ class _PremiumPageState extends State<PremiumPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('プレミアム機能'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).maybePop(),
-            child: const Text('キャンセル'),
-          ),
-        ],
       ),
       body: SafeArea(
         child: SingleChildScrollView(
@@ -287,6 +278,8 @@ class _PremiumPageState extends State<PremiumPage> {
                     _FeatureRow(text: '週のまとめを何度でも作成'),
                     SizedBox(height: 10),
                     _FeatureRow(text: '月のまとめを何度でも作成'),
+                    SizedBox(height: 10),
+                    _FeatureRow(text: '前日の書き忘れも記録できる'),
                   ],
                 ),
               ),
@@ -328,10 +321,12 @@ class _PremiumPageState extends State<PremiumPage> {
               if (!isPremium)
                 Text(
                   '自動更新サブスクリプションです（$periodText）\n'
-                  'お支払いは購入確定時にApple IDに請求されます。\n'
+                  'お支払いは購入確定時に、iOSではApple ID、AndroidではGoogleアカウントに請求されます。\n'
                   '現在の期間終了の24時間以上前に解約しない限り自動更新されます。\n'
-                  '解約／管理：設定 > Apple ID > サブスクリプション\n'
-                  '表示価格は目安で、実際の請求額はApp Storeが決定します。',
+                  '解約／管理：\n'
+                  'iOS：設定 > Apple ID > サブスクリプション\n'
+                  'Android：Google Play ストア > プロフィール > お支払いと定期購入 > 定期購入\n'
+                  '表示価格は目安で、実際の請求額は各ストアが決定します。',
                   textAlign: TextAlign.center,
                   style: Theme.of(context)
                       .textTheme
@@ -426,45 +421,44 @@ class PremiumManager {
   // 🔑 RevenueCat Public SDK Keys
   // Dashboard → API Keys → Public SDK Key
   static const String _iosKey = 'appl_nntQeUdyFeShLCUfXehVYxnhEGU';
-  static const String _androidKey = 'REVENUECAT_PUBLIC_ANDROID_KEY_HERE';
+  static const String _androidKey = 'goog_xThCYmyzQzYkrFqYtdZiVXWWDRv';
 
   static final ValueNotifier<bool> isPremium = ValueNotifier<bool>(false);
   static bool _configured = false;
 
   static Future<void> init() async {
-    if (_configured) return;
+  if (_configured) return;
 
-    // Web は Purchases 非対応
-    if (kIsWeb) {
-      _configured = true;
-      return;
-    }
-
-    await Purchases.setLogLevel(LogLevel.info);
-
-    final user = Supabase.instance.client.auth.currentUser;
-    final appUserId = user?.id;
-
-    // 📱 Platform 分岐
-    final apiKey = Platform.isIOS ? _iosKey : _androidKey;
-
-    final config = PurchasesConfiguration(apiKey);
-    if (appUserId != null && appUserId.isNotEmpty) {
-      config.appUserID = appUserId;
-    }
-
-    await Purchases.configure(config);
-
-    // customerInfo 更新を監視
-    Purchases.addCustomerInfoUpdateListener((info) {
-      applyCustomerInfo(info);
-    });
-
-    // 初回状態を反映
-    await refresh();
-
+  // Web だけは課金なし
+  if (kIsWeb) {
+    isPremium.value = false;
     _configured = true;
+    return;
   }
+
+  await Purchases.setLogLevel(LogLevel.info);
+
+  final user = Supabase.instance.client.auth.currentUser;
+  final appUserId = user?.id;
+
+  // ✅ iOS / Android で API キーを切り替える
+  final apiKey = Platform.isAndroid ? _androidKey : _iosKey;
+  final config = PurchasesConfiguration(apiKey);
+
+  if (appUserId != null && appUserId.isNotEmpty) {
+    config.appUserID = appUserId;
+  }
+
+  await Purchases.configure(config);
+
+  Purchases.addCustomerInfoUpdateListener((info) {
+    applyCustomerInfo(info);
+  });
+
+  await refresh();
+
+  _configured = true;
+}
 
   static Future<void> refresh() async {
     final info = await Purchases.getCustomerInfo();

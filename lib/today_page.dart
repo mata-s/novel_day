@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:lottie/lottie.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'weekly_library_page.dart';
 
 class TodayPage extends StatefulWidget {
   const TodayPage({super.key});
@@ -20,6 +21,184 @@ class TodayPage extends StatefulWidget {
 
 class _TodayPageState extends State<TodayPage> {
   // ===============================
+  // 昨日のエントリー用（プレミアムのみ）
+  bool _canEditYesterday = false;
+  bool _isEditingYesterday = false;
+  String _editingDateKey = '';
+  String get _targetDateKey => _isEditingYesterday ? _editingDateKey : _jstDateKey();
+
+  Future<void> _refreshCanEditYesterday() async {
+    final client = Supabase.instance.client;
+    final user = client.auth.currentUser;
+    if (user == null) {
+      if (!mounted) return;
+      setState(() => _canEditYesterday = false);
+      return;
+    }
+
+    if (!_isPremium) {
+      if (!mounted) return;
+      setState(() => _canEditYesterday = false);
+      return;
+    }
+
+    try {
+      final yesterdayKey = _yesterdayJstDateKey();
+      final yRes = await client
+          .from('entries')
+          .select('id')
+          .eq('user_id', user.id)
+          .eq('chapter_type', 'daily')
+          .eq('date_key', yesterdayKey)
+          .limit(1);
+      final yList = (yRes as List).cast<Map<String, dynamic>>();
+      final canEditYesterday = yList.isEmpty;
+      if (!mounted) return;
+      setState(() => _canEditYesterday = canEditYesterday);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _canEditYesterday = false);
+    }
+  }
+  String _yesterdayJstDateKey() {
+    final now = DateTime.now();
+    final yesterday = now.subtract(const Duration(days: 1));
+    return _jstDateKey(yesterday);
+  }
+  Widget _buildYesterdayToggle() {
+    if (!_isPremium) return const SizedBox.shrink();
+
+    Widget pill({
+      required IconData icon,
+      required String label,
+      required VoidCallback onTap,
+    }) {
+      final cs = Theme.of(context).colorScheme;
+      return Material(
+        color: cs.surfaceVariant,
+        borderRadius: BorderRadius.circular(999),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(999),
+          onTap: _isLoading ? null : onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 16, color: cs.onSurfaceVariant),
+                const SizedBox(width: 6),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: cs.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    // 昨日モード中なら「今日に戻る」
+    if (_isEditingYesterday) {
+      return pill(
+        icon: Icons.today,
+        label: '今日に戻る',
+        onTap: () => _loadTodayEntry(),
+      );
+    }
+
+    // 昨日が未投稿なら「昨日を書く」
+    if (_canEditYesterday) {
+      return pill(
+        icon: Icons.edit_calendar,
+        label: '昨日を書く',
+        onTap: () {
+          setState(() {
+            _memoController.clear();
+            _generatedTitle = null;
+            _generatedBody = null;
+            _isEditingYesterday = true;
+            _editingDateKey = _yesterdayJstDateKey();
+          });
+        },
+      );
+    }
+
+    return const SizedBox.shrink();
+  }
+
+  // ===============================
+  // 昨日コントロールの共通ウィジェット（ピル型トグルUIで統一）
+  // ===============================
+  Widget _buildYesterdayControls() {
+    if (!_isPremium) return const SizedBox.shrink();
+
+    Widget pill({
+      required IconData icon,
+      required String label,
+      required VoidCallback onTap,
+    }) {
+      final cs = Theme.of(context).colorScheme;
+      return Material(
+        color: cs.surfaceVariant,
+        borderRadius: BorderRadius.circular(999),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(999),
+          onTap: _isLoading ? null : onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 16, color: cs.onSurfaceVariant),
+                const SizedBox(width: 6),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: cs.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12.0),
+      child: Row(
+        children: [
+          if (_canEditYesterday)
+            pill(
+              icon: Icons.edit_calendar,
+              label: '昨日を書く',
+              onTap: () {
+                setState(() {
+                  _memoController.clear();
+                  _generatedTitle = null;
+                  _generatedBody = null;
+                  _isEditingYesterday = true;
+                  _editingDateKey = _yesterdayJstDateKey();
+                });
+              },
+            ),
+          if (_isEditingYesterday)
+            pill(
+              icon: Icons.today,
+              label: '今日に戻る',
+              onTap: () => _loadTodayEntry(),
+            ),
+        ],
+      ),
+    );
+  }
   // Premium / Ads
   // ===============================
   bool _isPremium = false;
@@ -30,7 +209,7 @@ class _TodayPageState extends State<TodayPage> {
 
   // ✅ 本番用（自分の AdMob ユニットIDに置き換えてください）
   static const String _iosProdInterstitialId = 'ca-app-pub-8925550821145779/3697543094';
-  static const String _androidProdInterstitialId = 'ca-app-pub-xxxxxxxxxxxxxxxx/xxxxxxxxxx';
+  static const String _androidProdInterstitialId = 'ca-app-pub-8925550821145779/6905259971';
 
   String get _interstitialUnitId {
     if (!kReleaseMode) {
@@ -105,11 +284,13 @@ class _TodayPageState extends State<TodayPage> {
       // プレミアム化したら、週/月の表示可否も即反映
       await _updateWeeklyButtonState();
       await _updateMonthlyButtonState();
+      unawaited(_refreshCanEditYesterday());
     };
     PremiumManager.isPremium.addListener(_premiumListener);
     _updateWeeklyButtonState();
     _updateMonthlyButtonState();
     _loadTodayEntry();
+    unawaited(_refreshCanEditYesterday());
     // おまけ: initStateで広告先読み
     unawaited(_loadInterstitial());
   }
@@ -257,6 +438,9 @@ class _TodayPageState extends State<TodayPage> {
         if (!mounted) return;
         setState(() {
           _canGenerateWeekly = false;
+          if (!_canGenerateWeekly && !_canGenerateMonthly) {
+            _fabExpanded = false;
+          }
         });
         return;
       }
@@ -272,13 +456,19 @@ class _TodayPageState extends State<TodayPage> {
 
       if (!mounted) return;
       setState(() {
-        // プレミアムなら作成済みでも生成できる（何度でも）
-        _canGenerateWeekly = _isPremium ? true : (weekly == null);
+        // 先週のまとめ章が未作成のときだけ表示
+        _canGenerateWeekly = (weekly == null);
+        if (!_canGenerateWeekly && !_canGenerateMonthly) {
+          _fabExpanded = false;
+        }
       });
     } catch (_) {
       if (!mounted) return;
       setState(() {
         _canGenerateWeekly = false;
+        if (!_canGenerateWeekly && !_canGenerateMonthly) {
+          _fabExpanded = false;
+        }
       });
     }
   }
@@ -328,6 +518,9 @@ class _TodayPageState extends State<TodayPage> {
         if (!mounted) return;
         setState(() {
           _canGenerateMonthly = false;
+          if (!_canGenerateWeekly && !_canGenerateMonthly) {
+            _fabExpanded = false;
+          }
         });
         return;
       }
@@ -343,13 +536,19 @@ class _TodayPageState extends State<TodayPage> {
 
       if (!mounted) return;
       setState(() {
-        // プレミアムなら作成済みでも生成できる（何度でも）
-        _canGenerateMonthly = _isPremium ? true : (monthly == null);
+        // 先月の短編が未作成のときだけ表示
+        _canGenerateMonthly = (monthly == null);
+        if (!_canGenerateWeekly && !_canGenerateMonthly) {
+          _fabExpanded = false;
+        }
       });
     } catch (_) {
       if (!mounted) return;
       setState(() {
         _canGenerateMonthly = false;
+        if (!_canGenerateWeekly && !_canGenerateMonthly) {
+          _fabExpanded = false;
+        }
       });
     }
   }
@@ -390,7 +589,10 @@ class _TodayPageState extends State<TodayPage> {
           _initialLoadingToday = false;
           _generatedTitle = null;
           _generatedBody = null;
+          _editingDateKey = _jstDateKey();
+          _isEditingYesterday = false;
         });
+        unawaited(_refreshCanEditYesterday());
         return;
       }
 
@@ -403,7 +605,10 @@ class _TodayPageState extends State<TodayPage> {
         _initialLoadingToday = false;
         _generatedTitle = title;
         _generatedBody = body;
+        _editingDateKey = _jstDateKey();
+        _isEditingYesterday = false;
       });
+      unawaited(_refreshCanEditYesterday());
 
       // カード表示時でも週・月ボタンを再判定する
       await _updateWeeklyButtonState();
@@ -479,7 +684,17 @@ class _TodayPageState extends State<TodayPage> {
 
       if (weekly != null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('先週のまとめ章は作成済みです')),
+          SnackBar(
+            content: const Text('先週のまとめ章は作成済みです'),
+            action: SnackBarAction(
+              label: '見に行く',
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const WeeklyLibraryPage()),
+                );
+              },
+            ),
+          ),
         );
         return;
       }
@@ -570,7 +785,17 @@ class _TodayPageState extends State<TodayPage> {
       await _updateWeeklyButtonState();
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('先週のまとめ章を作成しました')),
+        SnackBar(
+          content: const Text('先週のまとめ章を作成しました'),
+          action: SnackBarAction(
+            label: '見に行く',
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const WeeklyLibraryPage()),
+              );
+            },
+          ),
+        ),
       );
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -822,10 +1047,10 @@ class _TodayPageState extends State<TodayPage> {
         'title': title,
         'body': body,
         'chapter_type': 'daily',
-        'date_key': _jstDateKey(),
+        'date_key': _targetDateKey,
         'created_at': DateTime.now().toUtc().toIso8601String(),
       });
-
+      unawaited(_refreshCanEditYesterday());
       setState(() {
         _generatedTitle = title;
         _generatedBody = body;
@@ -949,9 +1174,16 @@ class _TodayPageState extends State<TodayPage> {
                 ? Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    '今日のメモ',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          _isEditingYesterday ? '昨日のメモ（書き忘れ）' : '今日のメモ',
+                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                      _buildYesterdayToggle(),
+                    ],
                   ),
                   const SizedBox(height: 4),
                   const Text(
@@ -1031,6 +1263,7 @@ class _TodayPageState extends State<TodayPage> {
                 : Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  _buildYesterdayControls(),
                   Card(
                     elevation: 0,
                     color: Colors.transparent,
@@ -1068,7 +1301,7 @@ class _TodayPageState extends State<TodayPage> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
-                                      '今日の物語',
+                                      _isEditingYesterday ? '昨日の物語（書き忘れ）' : '今日の物語',
                                       style: Theme.of(context)
                                           .textTheme
                                           .labelMedium

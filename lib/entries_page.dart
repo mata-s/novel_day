@@ -48,33 +48,32 @@ class _EntriesPageState extends State<EntriesPage> {
     try {
       final data = await client
           .from('entries')
-          .select('created_at, week_start_date, month_start_date')
+          .select('date_key, chapter_type')
           .eq('user_id', user.id);
 
-          if (!mounted) return;
+      if (!mounted) return;
 
       final yearSet = <int>{};
       final monthMap = <int, Set<int>>{};
 
       for (final raw in data as List) {
         final row = raw as Map<String, dynamic>;
-        final createdAt = row['created_at'];
-        if (createdAt == null) continue;
 
-        // 週まとめ・月まとめは除外して、日々のエントリだけを対象にする
-        if (row['week_start_date'] != null || row['month_start_date'] != null) {
-          continue;
-        }
+        // 日々の記録だけ対象（weekly/monthly は除外）
+        final chapterType = row['chapter_type']?.toString();
+        if (chapterType != 'daily') continue;
 
-        DateTime dt;
-        try {
-          dt = DateTime.parse(createdAt.toString());
-        } catch (_) {
-          continue;
-        }
+        final dateKey = row['date_key']?.toString();
+        if (dateKey == null || dateKey.isEmpty) continue;
 
-        final y = dt.year;
-        final m = dt.month;
+        // date_key: "YYYY-MM-DD"
+        final parts = dateKey.split('-');
+        if (parts.length != 3) continue;
+
+        final y = int.tryParse(parts[0]);
+        final m = int.tryParse(parts[1]);
+        if (y == null || m == null) continue;
+
         yearSet.add(y);
         monthMap.putIfAbsent(y, () => <int>{}).add(m);
       }
@@ -128,31 +127,34 @@ class _EntriesPageState extends State<EntriesPage> {
     }
 
     try {
-      // 選択中の年・月の範囲で絞り込む
-      final start = DateTime(_selectedYear, _selectedMonth, 1);
-      final end = DateTime(
-        _selectedMonth == 12 ? _selectedYear + 1 : _selectedYear,
-        _selectedMonth == 12 ? 1 : _selectedMonth + 1,
-        1,
-      );
+      // date_key(YYYY-MM-DD) で絞り込む（JSTズレ回避）
+      String two(int v) => v.toString().padLeft(2, '0');
+
+      // 月末日を求める: 次月0日 = 当月最終日
+      final lastDay = DateTime(_selectedYear, _selectedMonth + 1, 0).day;
+
+      final startKey = '${_selectedYear}-${two(_selectedMonth)}-01';
+      final endKey = '${_selectedYear}-${two(_selectedMonth)}-${two(lastDay)}';
 
       final data = await client
           .from('entries')
           .select()
           .eq('user_id', user.id)
-          .gte('created_at', start.toIso8601String())
-          .lt('created_at', end.toIso8601String())
+          .eq('chapter_type', 'daily')
+          .gte('date_key', startKey)
+          .lte('date_key', endKey)
+          .order('date_key', ascending: false)
           .order('created_at', ascending: false);
 
-          if (!mounted) return;
+      if (!mounted) return;
 
       final list = (data as List)
           .cast<Map<String, dynamic>>()
           .where((row) =>
               row['title'] != null &&
               row['body'] != null &&
-              row['week_start_date'] == null &&
-              row['month_start_date'] == null)
+              row['chapter_type'] == 'daily' &&
+              row['date_key'] != null)
           .toList();
 
       if (!mounted) return;
@@ -176,9 +178,24 @@ class _EntriesPageState extends State<EntriesPage> {
   String _formatDate(dynamic value) {
     try {
       if (value == null) return '';
-      // Supabase側のタイムスタンプ文字列をそのままパースして日付を取り出す
-      final dt = DateTime.parse(value.toString());
 
+      final s = value.toString();
+
+      // date_key: "YYYY-MM-DD"
+      if (!s.contains('T') && s.contains('-')) {
+        final parts = s.split('-');
+        if (parts.length >= 3) {
+          final y = int.tryParse(parts[0]);
+          final m = int.tryParse(parts[1]);
+          final d = int.tryParse(parts[2]);
+          if (y != null && m != null && d != null) {
+            return '${y}年${m}月${d}日';
+          }
+        }
+      }
+
+      // created_at fallback: convert to local to avoid off-by-one display
+      final dt = DateTime.parse(s).toLocal();
       return '${dt.year}年${dt.month}月${dt.day}日';
     } catch (_) {
       return '';
@@ -268,7 +285,7 @@ class _EntriesPageState extends State<EntriesPage> {
           final body = entry['body'] as String? ?? '';
           final memo = entry['memo'] as String? ?? '';
           final style = entry['style'] as String?;
-          final createdAt = _formatDate(entry['created_at']);
+          final createdAt = _formatDate(entry['date_key'] ?? entry['created_at']);
 
           final bodyPreview =
               body.length > 80 ? '${body.substring(0, 80)}…' : body;

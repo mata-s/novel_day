@@ -16,3 +16,10 @@ subprojects {
 tasks.register("clean", Delete) {
     delete rootProject.buildDir
 }
+
+// Flutter plugin が参照する値（app_links が flutter.compileSdkVersion を使うため）
+ext.flutter = [
+        compileSdkVersion: 35,
+        minSdkVersion    : 21,
+        targetSdkVersion : 35,
+]

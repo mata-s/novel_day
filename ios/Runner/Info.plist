@@ -14,6 +14,10 @@
 	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>リマインダー通知のためにカレンダーを使用します。</string>
+	<key>NSUserNotificationUsageDescription</key>
+	<string>毎日のメモリマインダー通知を送るために使用します。</string>
 	<key>CFBundleName</key>
 	<string>novel_day</string>
 	<key>CFBundlePackageType</key>
