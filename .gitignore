@@ -45,3 +45,5 @@ app.*.map.json
 # Android signing (DO NOT COMMIT)
 android/key.properties
 android/app/upload-keystore.jks
+# Heap dumps / profiler
+*.hprof
