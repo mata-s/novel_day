@@ -321,12 +321,10 @@ class _PremiumPageState extends State<PremiumPage> {
               if (!isPremium)
                 Text(
                   '自動更新サブスクリプションです（$periodText）\n'
-                  'お支払いは購入確定時に、iOSではApple ID、AndroidではGoogleアカウントに請求されます。\n'
-                  '現在の期間終了の24時間以上前に解約しない限り自動更新されます。\n'
-                  '解約／管理：\n'
-                  'iOS：設定 > Apple ID > サブスクリプション\n'
-                  'Android：Google Play ストア > プロフィール > お支払いと定期購入 > 定期購入\n'
-                  '表示価格は目安で、実際の請求額は各ストアが決定します。',
+                  'お支払いは購入確定時に、ご利用のアカウントに請求されます。\n'
+                  '現在の期間終了の24時間以上前に解約しない限り自動で更新されます。\n'
+                  '解約や管理は、ご利用端末のサブスクリプション設定画面から行えます。\n'
+                  '表示価格は目安であり、実際の請求額や通貨はご利用のストアにより異なる場合があります。',
                   textAlign: TextAlign.center,
                   style: Theme.of(context)
                       .textTheme

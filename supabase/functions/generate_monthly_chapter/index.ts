@@ -1,5 +1,3 @@
-// supabase/functions/generate_monthly_chapter/index.ts
-
 // OpenAI クライアント（Edge Functions 用）
 import OpenAI from "https://deno.land/x/openai@v4.24.0/mod.ts";
 
@@ -18,6 +16,8 @@ interface EntryForAi {
 interface Persona {
   first_person?: string;
   name?: string | null;
+  occupation?: string | null;
+  freeContext?: string | null;
 }
 
 Deno.serve(async (req) => {
@@ -47,6 +47,14 @@ Deno.serve(async (req) => {
 
     const userName = (persona?.name && String(persona.name).trim() !== "")
       ? String(persona.name)
+      : undefined;
+
+    const occupation = (persona?.occupation && String(persona.occupation).trim() !== "")
+      ? String(persona.occupation)
+      : undefined;
+
+    const freeContext = (persona?.freeContext && String(persona.freeContext).trim() !== "")
+      ? String(persona.freeContext)
       : undefined;
 
     // ===== 1ヶ月分のログをテキストにまとめる =====
@@ -80,6 +88,8 @@ Deno.serve(async (req) => {
       trimmedLogs,
       firstPerson,
       userName,
+      occupation,
+      freeContext,
       lengthHint,
     );
 
@@ -102,7 +112,10 @@ Deno.serve(async (req) => {
         },
       ],
       temperature: 0.8,
-      max_tokens: 1800,
+      // 月の短編をまとめて生成するため、少し余裕を持ったトークン数を確保
+      max_tokens: 4000,
+      // モデルの出力を必ず JSON オブジェクトにする
+      response_format: { type: "json_object" },
     });
 
     const choice = completion.choices[0];
@@ -159,12 +172,16 @@ Deno.serve(async (req) => {
           "generate_monthly_chapter: JSON-like block not found. raw content preview:",
           jsonText.slice(0, 300),
         );
+
+        // モデルが JSON を返さずプレーンテキストだけを返した場合のフォールバック。
+        // エラーにはせず、そのテキスト全体を本文として返す。
         return new Response(
           JSON.stringify({
-            error: "モデルの出力が JSON 形式ではありませんでした。",
+            title: "今月の記録",
+            body: jsonText.trim(),
           }),
           {
-            status: 500,
+            status: 200,
             headers: { "Content-Type": "application/json" },
           },
         );
@@ -200,16 +217,46 @@ function createMonthlyPrompt(
   logs: string,
   firstPerson: string,
   userName: string | undefined,
+  occupation: string | undefined,
+  freeContext: string | undefined,
   lengthHint: string,
 ): string {
   const namePart = userName
     ? `主人公の名前は「${userName}」ですが、無理に頻繁に出す必要はありません。時々さりげなく出す程度で構いません。`
     : "主人公の名前は特に指定しません。";
 
+  const occupationPart = occupation
+    ? `仕事や役割として「${occupation}」があります。これは、その人がどのような` +
+      "日常を送っているかを考えるためのヒントとして使ってください。"
+    : "仕事や役割について特別な指定はありません。";
+
+  const freeContextPart = freeContext
+    ? "日常の背景メモ（自由記入）として、次のような情報があります: " +
+      freeContext +
+      "。文脈が自然につながる範囲で、心情や空気感の描写に活かしてくださ" +
+      "い。"
+    : "日常の背景メモは特に指定されていません。";
+
   return `
 以下は、ある1ヶ月のあいだに書かれた短い日記・短編のログです。
 
 ${logs}
+
+参考情報（この月の生活のヒント）:
+- ${occupationPart}
+- ${freeContextPart}
+
+これらの情報は、その人の「暮らしの背景」や「心の置き場所」を考えるた
+めの手がかりとして使ってください。
+
+とくに次のルールに従ってください:
+- 日記の内容と自然につながる場合は、仕事・役割や背景メモに関係する描写
+  を、本文のどこかで1回以上さりげなく入れてください。
+- ただし、新しい具体的事実（特定の会社名・店名・人物名・出来事など）を
+  勝手に付け加えてはいけません。
+- 「コンビニのバイト」「ホテル清掃」「事務」など、誰でも連想できる一般
+  的な行為（商品を並べる / レジを閉める / 部屋を整える / 画面を閉じる
+  など）だけを、必要に応じて1〜2個まで描写してよいものとします。
 
 この1ヶ月分の出来事や心の動きをもとに、
 
@@ -225,6 +272,8 @@ ${logs}
 - トーンは、静かでやさしく、ときどき少し切ない雰囲気で。
 - 日記の具体的な出来事（食べ物、天気、人とのやりとりなど）を適度に拾いながら、「ひとつの物語」になるように再構成してください。
 - ポジティブすぎず、ネガティブすぎず、「なんとか今日を生きている」感じのリアルさと、小さな希望を大事にしてください。
+- 段落の先頭に全角スペース（「　」）などの字下げを入れず、行頭からそのまま文章を書き始めてください。改行のみで段落を区切り、字下げの有無が段落ごとに混在しないようにしてください。
+- 終盤のまとめでは、「前に進んでいこう」「物語はまだ続いていく」などの紋切り型の前向きフレーズを多用しないでください。希望や前向きさは、行動や情景の描写からほのかに伝わる程度にとどめてください。
 - ${lengthHint}
 
 出力は必ず JSON 形式で返してください。
@@ -302,7 +351,8 @@ function inferDominantStyle(entries: EntryForAi[]): string | undefined {
 function buildSystemPromptForMonthly(style: string | undefined): string {
   const baseTail =
     "与えられた1ヶ月分の日記ログをもとに、ひとつの連続した短編小説を作ります。" +
-    "出力は必ず JSON 形式で { \"title\": string, \"body\": string } のみを返してください。";
+    "出力は必ず JSON 形式で { \"title\": string, \"body\": string } のみを返してください。" +
+    "文章の段落は字下げせず、行頭に全角スペース（「　」）などを入れないでください。改行のみで段落を区切ってください。";
 
   if (!style) {
     // デフォルトは A 系の世界観に寄せる

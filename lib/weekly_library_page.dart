@@ -234,15 +234,22 @@ class _WeeklyLibraryPageState extends State<WeeklyLibraryPage> {
   }
 
   List<_MonthlyWeekGroup> _buildMonthlyGroups() {
+    if (_selectedYear == null) return [];
+    final year = _selectedYear!;
     final Map<int, List<_WeekEntry>> byMonth = {};
-
     for (final entry in _weeklyEntries) {
-      final m = entry.startDate.month;
-      byMonth.putIfAbsent(m, () => <_WeekEntry>[]).add(entry);
+      final weekStart = entry.startDate;
+      final weekEnd = weekStart.add(const Duration(days: 6));
+      for (var month = 1; month <= 12; month++) {
+        final monthStart = DateTime(year, month, 1);
+        final monthEnd = DateTime(year, month + 1, 1).subtract(const Duration(days: 1));
+        final noOverlap = weekEnd.isBefore(monthStart) || weekStart.isAfter(monthEnd);
+        if (!noOverlap) {
+          byMonth.putIfAbsent(month, () => <_WeekEntry>[]).add(entry);
+        }
+      }
     }
-
-    final months = byMonth.keys.toList()..sort((a, b) => b.compareTo(a)); // 新しい月が上
-
+    final months = byMonth.keys.toList()..sort((a, b) => b.compareTo(a));
     return months
         .map(
           (m) => _MonthlyWeekGroup(

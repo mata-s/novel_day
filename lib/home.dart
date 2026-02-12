@@ -3,6 +3,8 @@ import 'package:novel_day/entries_page.dart';
 import 'package:novel_day/library_page.dart';
 import 'package:novel_day/today_page.dart';
 import 'package:novel_day/settings_page.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:purchases_flutter/purchases_flutter.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -13,8 +15,40 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _currentIndex = 0;
+  bool _purchasesSynced = false;
 
-  // 将来的に別ファイルへ切り出す予定のタブごとのページ
+  @override
+  void initState() {
+    super.initState();
+    _syncProfileAndRevenueCat();
+  }
+
+  Future<void> _syncProfileAndRevenueCat() async {
+    final client = Supabase.instance.client;
+    final user = client.auth.currentUser;
+    if (user == null) return;
+
+    try {
+      final profileRes = await client
+          .from('profiles')
+          .select()
+          .eq('id', user.id)
+          .maybeSingle();
+
+      if (profileRes == null) {
+        // プロフィールがまだ作成されていない場合は、ここでは何もしない
+        return;
+      }
+
+      if (!_purchasesSynced) {
+        await Purchases.logIn(user.id);
+        _purchasesSynced = true;
+      }
+    } catch (e) {
+      debugPrint('Failed to sync RevenueCat: $e');
+    }
+  }
+
   final List<Widget> _pages = const [
     TodayPage(),
     EntriesPage(),

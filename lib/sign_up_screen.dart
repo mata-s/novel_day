@@ -58,7 +58,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
 
       final name = _nameController.text.trim();
       final firstPerson = _firstPersonController.text.trim();
-      if (name.isEmpty) throw Exception('名前を入力してください');
+      if (name.isEmpty) throw Exception('表示名を入力してください');
 
       await client.from('profiles').insert({
         'id': user.id,
@@ -127,7 +127,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
             ),
             const SizedBox(height: 16),
             Text(
-              'まずは「名前」と「一人称」を教えてだくさい。\n物語の語り口に反映されます。',
+              'まずは「表示名」と「一人称」を教えてだくさい。\n物語の語り口に反映されます。',
               style: Theme.of(context)
                   .textTheme
                   .bodyMedium
@@ -183,7 +183,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
               controller: _nameController,
               textInputAction: TextInputAction.next,
               decoration: const InputDecoration(
-                labelText: '名前（表示名）',
+                labelText: '表示名',
                 border: OutlineInputBorder(),
               ),
             ),

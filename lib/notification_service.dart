@@ -77,15 +77,6 @@ class NotificationService {
     await AppSettings.openAppSettings(type: AppSettingsType.notification);
   }
 
-  static Future<void> _requestAndroidNotificationPermission() async {
-    final androidPlugin =
-        _plugin.resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>();
-
-    if (androidPlugin != null) {
-      await androidPlugin.requestNotificationsPermission();
-    }
-  }
 
   static Future<void> _configureLocalTimeZone() async {
     tz.initializeTimeZones();

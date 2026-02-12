@@ -1,5 +1,5 @@
 // supabase/functions/generate_weekly_chapter/index.ts
-// 1週間分のエピソードから「第○週 特別章」を生成
+// 1週間分のエピソードから「第○週 まとめ章」を生成
 
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
 
@@ -27,6 +27,20 @@ Deno.serve(async (req) => {
 
     const dominantStyle = inferDominantStyle(entries);
 
+    const occupation =
+      persona &&
+      typeof persona.occupation === "string" &&
+      persona.occupation.trim().length > 0
+        ? persona.occupation.trim()
+        : "";
+
+    const freeContext =
+      persona &&
+      typeof persona.freeContext === "string" &&
+      persona.freeContext.trim().length > 0
+        ? persona.freeContext.trim()
+        : "";
+
     const firstPerson =
       persona && typeof persona.first_person === "string" && persona.first_person.trim().length > 0
         ? persona.first_person.trim()
@@ -36,6 +50,14 @@ Deno.serve(async (req) => {
       persona && typeof persona.name === "string" && persona.name.trim().length > 0
         ? persona.name.trim()
         : "";
+
+    const occupationPart = occupation
+      ? `- 仕事・役割: ${occupation}（生活の背景や一日のリズムをイメージするためのヒントです）`
+      : "- 仕事・役割についての特別な指定はありません。";
+
+    const freeContextPart = freeContext
+      ? `- 日常の背景メモ: ${freeContext}`
+      : "- 日常の背景メモは特に指定されていません。";
 
     const entriesText = entries
       .map((e: any) => {
@@ -48,7 +70,7 @@ Deno.serve(async (req) => {
 
     const prompt = `
 あなたは、日本語で短い小説風テキストを書く作家です。
-ユーザーの1週間分のエピソードをもとに、「第○週 まとめ章（特別章）」を書いてください。
+ユーザーの1週間分のエピソードをもとに、「第○週 まとめ章」を書いてください。
 
 主人公の設定:
 - 一人称: ${firstPerson}
@@ -56,6 +78,20 @@ Deno.serve(async (req) => {
 
 本文は必ずこの主人公の一人称で書いてください。
 他の語り手や三人称に変えず、この人物視点の地の文で統一してください。
+
+参考情報（この1週間の生活のヒント）:
+${occupationPart}
+${freeContextPart}
+
+これらの情報は、その人の「暮らしの背景」や「心の置き場所」を考えるための手がかりとして使ってください。
+
+- 日記の内容と自然につながる場合は、仕事・役割や背景メモに関係する描写を、
+  本文のどこかで1回以上さりげなく入れてください。
+- ただし、新しい具体的事実（特定の会社名・店名・人物名・出来事など）を
+  勝手に付け加えてはいけません。
+- 「コンビニのバイト」「ホテル清掃」「事務」など、誰でも連想できる一般的な行為
+  （商品を並べる / レジを閉める / 部屋を整える / 画面を閉じる など）だけを、
+  必要に応じて1〜2個まで描写してよいものとします。
 
 1週間の要素として意識してほしいこと:
 - 先週の空気感（全体的にどんな1週間だったか）
@@ -68,6 +104,9 @@ Deno.serve(async (req) => {
 - 日常の出来事を少しだけドラマティックに、でもやりすぎない表現で
 - 一週間を振り返る「まとめ章」として、読み終わったときに少しだけ前向きになれるトーンで
 - 「ですます調」ではなく、「〜した」「〜だった」のような地の文で書いてください
+- タイトルにダッシュ（— / ― / —— / ーー / -）や詩的な副題は使わず、素朴で説明的なタイトルにしてください。
+- 段落冒頭に全角スペースや字下げは入れず、改行のみで段落を区切ってください。
+- すべての段落でインデントの有無を統一してください。
 
 出力フォーマット:
 必ず次のJSON形式で返してください（余計なテキストは書かないこと）:
@@ -107,7 +146,7 @@ ${entriesText}
     const completionJson = await completionRes.json();
     const content = completionJson.choices?.[0]?.message?.content;
 
-    let title = "第○週 特別章";
+    let title = "第○週 まとめ章";
     let body = "";
 
     try {
@@ -168,8 +207,10 @@ function inferDominantStyle(entries: any[]): string | undefined {
  */
 function buildSystemPromptForWeekly(style: string | undefined): string {
   const baseTail =
-    "ユーザーの1週間分のエピソードをもとに、『第○週 まとめ章（特別章）』となる短い小説風テキストを書きます。" +
-    "出力は必ず JSON 形式で { \"title\": string, \"body\": string } のみを返してください。";
+    "ユーザーの1週間分のエピソードをもとに、『第○週 まとめ章』となる短い小説風テキストを書きます。" +
+    "出力は必ず JSON 形式で { \"title\": string, \"body\": string } のみを返してください。" +
+    "タイトルは詩的にしすぎず、ダッシュや副題を使わないでください。" +
+    "文章の段落は字下げせず、改行のみで統一してください。";
 
   if (!style) {
     return (

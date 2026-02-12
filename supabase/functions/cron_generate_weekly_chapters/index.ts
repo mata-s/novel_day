@@ -1,215 +1,244 @@
-// supabase/functions/cron_generate_weekly_chapters/index.ts
-
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { generateWeeklyChapterFromEntries } from "../_shared/weekly_ai.ts";
 
-const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
-if (!OPENAI_API_KEY || !SUPABASE_URL || !SERVICE_ROLE_KEY) {
-  console.error("Missing env vars.");
+if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
+  console.error("SUPABASE_URL or SERVICE_ROLE_KEY is not set.");
 }
 
-const supabase = createClient(SUPABASE_URL!, SERVICE_ROLE_KEY!, {
-  auth: { persistSession: false },
-});
+const supabase = createClient(SUPABASE_URL!, SERVICE_ROLE_KEY!);
 
-function startOfWeek(dt: Date): Date {
-  const weekday = dt.getUTCDay() === 0 ? 7 : dt.getUTCDay(); // 月:1 ... 日:7
-  const base = new Date(Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth(), dt.getUTCDate()));
-  base.setUTCDate(base.getUTCDate() - (weekday - 1));
-  return base;
-}
-
+// ─────────────────────────────
+// Deno.serve: cron から叩かれるエンドポイント
+// ─────────────────────────────
 Deno.serve(async (_req) => {
   try {
-    const now = new Date();
-    const thisWeekStart = startOfWeek(now);
-    const lastWeekStart = new Date(thisWeekStart);
-    lastWeekStart.setUTCDate(thisWeekStart.getUTCDate() - 7);
-    const lastWeekEnd = new Date(thisWeekStart);
-    lastWeekEnd.setUTCSeconds(thisWeekStart.getUTCSeconds() - 1);
+    const range = getLastWeekRangeJST();
+    const { startKey, endKey, weekStartKey, weekOfMonth } = range;
 
-    const lastWeekStartIso = lastWeekStart.toISOString();
-    const lastWeekEndIso = lastWeekEnd.toISOString();
-    const lastWeekStartDateStr = lastWeekStartIso.substring(0, 10); // YYYY-MM-DD
+    console.log(
+      `Weekly cron: target range ${startKey} ~ ${endKey} (week_start=${weekStartKey}, weekOfMonth=${weekOfMonth})`,
+    );
 
-    // 1) 先週 daily のあるユーザー一覧
-    const { data: usersRows, error: usersError } = await supabase
-      .from("entries")
-      .select("user_id")
-      .eq("chapter_type", "daily")
-      .gte("created_at", lastWeekStartIso)
-      .lte("created_at", lastWeekEndIso)
-      .neq("user_id", null);
+    // ① 自動生成 ON & プレミアムのユーザーを取得
+    const { data: profiles, error: profilesError } = await supabase
+      .from("profiles")
+      .select("id, name, first_person")
+      .eq("is_premium", true)
+      .eq("auto_weekly_novel", true);
 
-    if (usersError) throw usersError;
-    if (!usersRows || usersRows.length === 0) {
-      return new Response(JSON.stringify({ message: "no daily entries last week" }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
+    if (profilesError) {
+      console.error("profiles error", profilesError);
+      return jsonRes(
+        500,
+        { error: "profiles fetch error", detail: profilesError.message },
+      );
     }
 
-    const userIds = Array.from(new Set(usersRows.map((r: any) => r.user_id as string)));
+    if (!profiles || profiles.length === 0) {
+      console.log("no target users for weekly cron");
+      return jsonRes(200, { message: "no target users" });
+    }
 
-    for (const userId of userIds) {
-      // 2) そのユーザーが先週分 weekly をすでに持ってないかチェック
-      const { data: weeklyExisting, error: weeklyCheckError } = await supabase
+    let processed = 0;
+    let skippedNoDaily = 0;
+    let skippedAlreadyExists = 0;
+    let failed = 0;
+
+    for (const p of profiles) {
+      const userId = p.id as string;
+      const firstPerson = (p.first_person as string | null) ?? "僕";
+      const userName = (p.name as string | null) ?? null;
+
+      console.log(`processing user: ${userId}`);
+
+      // ② 先週 7 日分 daily を取得
+      const { data: dailyList, error: dailyError } = await supabase
+        .from("entries")
+        .select("created_at, memo, body, writing_style, style")
+        .eq("user_id", userId)
+        .eq("chapter_type", "daily")
+        .gte("date_key", startKey)
+        .lte("date_key", endKey)
+        .order("date_key", { ascending: true })
+        .order("created_at", { ascending: true });
+
+      if (dailyError) {
+        console.error("daily fetch error", userId, dailyError);
+        failed++;
+        continue;
+      }
+
+      if (!dailyList || dailyList.length === 0) {
+        console.log(`user ${userId}: no daily entries for last week`);
+        skippedNoDaily++;
+        continue;
+      }
+
+      // ③ すでに weekly があるかチェック
+      const { data: existingWeekly, error: weeklyError } = await supabase
         .from("entries")
         .select("id")
         .eq("user_id", userId)
         .eq("chapter_type", "weekly")
-        .eq("week_start_date", lastWeekStartDateStr)
+        .eq("week_start_date", weekStartKey)
         .maybeSingle();
 
-      if (weeklyCheckError) {
-        console.error("weeklyCheckError:", weeklyCheckError);
-        continue;
-      }
-      if (weeklyExisting) {
-        // もう先週分の特別章があるのでスキップ
+      if (weeklyError) {
+        console.error("weekly exists check error", userId, weeklyError);
+        failed++;
         continue;
       }
 
-      // 3) 先週の daily entries を取得
-      const { data: dailyEntries, error: dailyError } = await supabase
+      if (existingWeekly) {
+        console.log(`user ${userId}: weekly already exists, skip`);
+        skippedAlreadyExists++;
+        continue;
+      }
+
+      // ④ これまでの weekly 件数から「第◯巻」を決める
+      const { data: weeklyList, error: weeklyListError } = await supabase
         .from("entries")
-        .select("created_at, memo, body")
+        .select("id")
         .eq("user_id", userId)
-        .eq("chapter_type", "daily")
-        .gte("created_at", lastWeekStartIso)
-        .lte("created_at", lastWeekEndIso)
-        .order("created_at", { ascending: true });
+        .eq("chapter_type", "weekly");
 
-      if (dailyError) {
-        console.error("dailyError:", dailyError);
-        continue;
-      }
-      if (!dailyEntries || dailyEntries.length === 0) {
+      if (weeklyListError) {
+        console.error("weekly list error", userId, weeklyListError);
+        failed++;
         continue;
       }
 
-      // 4) persona (first_person, name)
-      const { data: profile, error: profileError } = await supabase
-        .from("profiles")
-        .select("first_person, name")
-        .eq("id", userId)
-        .maybeSingle();
+      const volumeNumber = (weeklyList?.length ?? 0) + 1;
 
-      if (profileError) {
-        console.error("profileError:", profileError);
-      }
-
-      const firstPerson =
-        profile && profile.first_person && String(profile.first_person).trim().length > 0
-          ? String(profile.first_person).trim()
-          : "僕";
-      const name =
-        profile && profile.name && String(profile.name).trim().length > 0
-          ? String(profile.name).trim()
-          : "";
-
-      // 5) プロンプト用テキスト整形（今の generate_weekly_chapter とほぼ同じ）
-      const entriesText = (dailyEntries as any[])
-        .map((e) => {
-          const date = e.created_at ?? "";
-          const memo = e.memo ?? "";
-          const body = e.body ?? "";
-          return `■ 日付: ${date}\n・メモ: ${memo}\n・小説: ${body}`;
-        })
-        .join("\n\n");
-
-      const prompt = `
-あなたは、日本語で短い小説風テキストを書く作家です。
-ユーザーの1週間分のエピソードをもとに、「第○週 まとめ章（特別章）」を書いてください。
-
-主人公の設定:
-- 一人称: ${firstPerson}
-- 名前: ${name || "（名前は本文に出してもし出さなくてもよい）"}
-
-本文は必ずこの主人公の一人称で書いてください。
-他の語り手や三人称に変えず、この人物視点の地の文で統一してください。
-
-1週間の要素として意識してほしいこと:
-- 今週の空気感（全体的にどんな1週間だったか）
-- 心のトーンの変化（落ち込み・回復・ちいさな喜びなど）
-- 食べたものの傾向（よく出てくる食べ物があればさりげなく登場させる）
-- よく出てきたキーワードや場面（駅・空・雨・コーヒーなど）
-
-条件:
-- 文字数の目安: 400〜800文字程度
-- 日常の出来事を少しだけドラマティックに、でもやりすぎない表現で
-- 一週間を振り返る「まとめ章」として、読み終わったときに少しだけ前向きになれるトーンで
-- 「ですます調」ではなく、「〜した」「〜だった」のような地の文で書いてください
-
-出力フォーマット:
-必ず次のJSON形式で返してください（余計なテキストは書かないこと）:
-{"title": "タイトル", "body": "本文"}
-
-対象の1週間の素材（メモと小説）は次の通りです:
-${entriesText}
-`;
-      // 6) OpenAI呼び出し（今の index.ts と同じロジック）
-      const completionRes = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${OPENAI_API_KEY}`,
-        },
-        body: JSON.stringify({
-          model: "gpt-4.1-mini",
-          messages: [
-            { role: "system", content: "あなたは日本語で短い小説や章をまとめて書くAIです。" },
-            { role: "user", content: prompt },
-          ],
-          temperature: 0.8,
-        }),
-      });
-
-      if (!completionRes.ok) {
-        console.error("OpenAI error:", await completionRes.text());
-        continue;
-      }
-
-      const completionJson = await completionRes.json();
-      const content = completionJson.choices?.[0]?.message?.content;
-      let title = "第○週 特別章";
-      let body = "";
-
+      // ⑤ 共通 AI 関数で weekly 本文を生成
       try {
-        const parsed = JSON.parse(content);
-        title = parsed.title ?? title;
-        body = parsed.body ?? "";
-      } catch (_e) {
-        body = typeof content === "string" ? content : JSON.stringify(content);
-      }
+        const { title: aiTitle, body } = await generateWeeklyChapterFromEntries(
+          dailyList,
+          {
+            first_person: firstPerson,
+            name: userName,
+          },
+        );
 
-      // 7) weekly 章として entries に保存
-      const { error: insertError } = await supabase.from("entries").insert({
-        user_id: userId,
-        memo: "第○週 まとめ章",
-        style: "W",
-        title,
-        body,
-        chapter_type: "weekly",
-        week_start_date: lastWeekStartDateStr,
-      });
+        // アプリ側のタイトルルールを優先
+        const finalTitle = `第${weekOfMonth}週 まとめ章 第${volumeNumber}巻`;
 
-      if (insertError) {
-        console.error("insertError:", insertError);
+        // ⑥ entries に weekly として保存
+        const { error: insertError } = await supabase.from("entries").insert({
+          user_id: userId,
+          memo: `第${weekOfMonth}週 まとめ章`,
+          style: "W",
+          title: finalTitle,
+          body,
+          chapter_type: "weekly",
+          week_start_date: weekStartKey,
+          volume: volumeNumber,
+          created_at: new Date().toISOString(),
+        });
+
+        if (insertError) {
+          console.error("insert weekly error", userId, insertError);
+          failed++;
+          continue;
+        }
+
+        processed++;
+      } catch (e) {
+        console.error("AI generate weekly failed", userId, e);
+        failed++;
+        continue;
       }
     }
 
-    return new Response(JSON.stringify({ message: "ok" }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
+    return jsonRes(200, {
+      message: "weekly cron finished",
+      range: { startKey, endKey, weekStartKey, weekOfMonth },
+      stats: {
+        target: profiles.length,
+        processed,
+        skippedNoDaily,
+        skippedAlreadyExists,
+        failed,
+      },
     });
   } catch (e) {
-    console.error("cron function error:", e);
-    return new Response(
-      JSON.stringify({ error: "Unexpected error", detail: String(e) }),
-      { status: 500, headers: { "Content-Type": "application/json" } },
-    );
+    console.error("cron error", e);
+    return jsonRes(500, { error: "unexpected error", detail: String(e) });
   }
 });
+
+// ─────────────────────────────
+// JST の「先週 7 日間 (Mon〜Sun)」を計算
+// ─────────────────────────────
+function getLastWeekRangeJST() {
+  const now = new Date();
+  const nowJST = toJST(now);
+
+  // nowJST の「今週の月曜」
+  const day = nowJST.getDay(); // 0:Sun, 1:Mon, ...
+  const diffToMonday = (day + 6) % 7; // 月曜からの経過日数
+  const thisMonday = new Date(
+    nowJST.getFullYear(),
+    nowJST.getMonth(),
+    nowJST.getDate() - diffToMonday,
+  );
+
+  // 先週の月曜・日曜
+  const lastMonday = new Date(
+    thisMonday.getFullYear(),
+    thisMonday.getMonth(),
+    thisMonday.getDate() - 7,
+  );
+  const lastSunday = new Date(
+    lastMonday.getFullYear(),
+    lastMonday.getMonth(),
+    lastMonday.getDate() + 6,
+  );
+
+  const startKey = formatDateKey(lastMonday);
+  const endKey = formatDateKey(lastSunday);
+  const weekStartKey = startKey;
+  const weekOfMonth = calcWeekOfMonth(lastMonday);
+
+  return {
+    startDate: lastMonday,
+    endDate: lastSunday,
+    startKey,
+    endKey,
+    weekStartKey,
+    weekOfMonth,
+  };
+}
+
+function toJST(date: Date): Date {
+  const utc = date.getTime() + date.getTimezoneOffset() * 60000;
+  return new Date(utc + 9 * 60 * 60000); // +9h
+}
+
+function formatDateKey(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+// 月の第何週か（Flutter の _weekOfMonth と同じイメージで）
+function calcWeekOfMonth(d: Date): number {
+  const first = new Date(d.getFullYear(), d.getMonth(), 1);
+  const firstDay = first.getDay(); // 0=Sun
+
+  // 月曜を週の始まりとしたときのオフセット
+  const offset = (firstDay + 6) % 7;
+
+  return Math.floor((d.getDate() + offset - 1) / 7) + 1;
+}
+
+function jsonRes(status: number, obj: unknown): Response {
+  return new Response(JSON.stringify(obj), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}

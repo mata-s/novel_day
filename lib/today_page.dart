@@ -27,6 +27,18 @@ class _TodayPageState extends State<TodayPage> {
   String _editingDateKey = '';
   String get _targetDateKey => _isEditingYesterday ? _editingDateKey : _jstDateKey();
 
+  // ===============================
+  // 特別なテスト用プレミアムユーザー & 実質プレミアム判定
+  static const String _testPremiumUserId =
+      '9491e148-1a07-4c6f-ad7a-39cdb3b74b0c';
+
+  bool get _isTestPremiumUser {
+    final user = Supabase.instance.client.auth.currentUser;
+    return user?.id == _testPremiumUserId;
+  }
+
+  bool get _effectivePremium => _isPremium || _isTestPremiumUser;
+
   Future<void> _refreshCanEditYesterday() async {
     final client = Supabase.instance.client;
     final user = client.auth.currentUser;
@@ -36,7 +48,7 @@ class _TodayPageState extends State<TodayPage> {
       return;
     }
 
-    if (!_isPremium) {
+    if (!_effectivePremium) {
       if (!mounted) return;
       setState(() => _canEditYesterday = false);
       return;
@@ -66,7 +78,7 @@ class _TodayPageState extends State<TodayPage> {
     return _jstDateKey(yesterday);
   }
   Widget _buildYesterdayToggle() {
-    if (!_isPremium) return const SizedBox.shrink();
+    if (!_effectivePremium) return const SizedBox.shrink();
 
     Widget pill({
       required IconData icon,
@@ -135,7 +147,7 @@ class _TodayPageState extends State<TodayPage> {
   // 昨日コントロールの共通ウィジェット（ピル型トグルUIで統一）
   // ===============================
   Widget _buildYesterdayControls() {
-    if (!_isPremium) return const SizedBox.shrink();
+    if (!_effectivePremium) return const SizedBox.shrink();
 
     Widget pill({
       required IconData icon,
@@ -256,7 +268,7 @@ class _TodayPageState extends State<TodayPage> {
   /// 非プレミアムのとき、無料枠が終わっていたらプレミアム誘導する。
   /// true を返したら「処理は続行してOK」
   Future<bool> _guardSpecialOrUpsell({required String type}) async {
-    if (_isPremium) return true;
+    if (_effectivePremium) return true;
 
     final used = await _isFreeUsed(
       type == 'weekly' ? _kFreeWeeklyUsed : _kFreeMonthlyUsed,
@@ -334,7 +346,7 @@ class _TodayPageState extends State<TodayPage> {
 
   Future<void> _showAdForNonPremium() async {
     // プレミアムなら広告なし
-    if (_isPremium) return;
+    if (_effectivePremium) return;
 
     await _loadInterstitial();
     final ad = _interstitialAd;
@@ -565,6 +577,7 @@ class _TodayPageState extends State<TodayPage> {
       setState(() {
         _initialLoadingToday = false;
       });
+      _memoController.clear();
       return;
     }
 
@@ -592,6 +605,7 @@ class _TodayPageState extends State<TodayPage> {
           _editingDateKey = _jstDateKey();
           _isEditingYesterday = false;
         });
+        _memoController.clear();
         unawaited(_refreshCanEditYesterday());
         return;
       }
@@ -608,6 +622,7 @@ class _TodayPageState extends State<TodayPage> {
         _editingDateKey = _jstDateKey();
         _isEditingYesterday = false;
       });
+      _memoController.clear();
       unawaited(_refreshCanEditYesterday());
 
       // カード表示時でも週・月ボタンを再判定する
@@ -622,8 +637,8 @@ class _TodayPageState extends State<TodayPage> {
     }
   }
 
-  // ===============================
-  // 週のまとめ章を生成
+    // ===============================
+  // 週のまとめ章を生成（直近の「先週7日間」を date_key で取得）
   // ===============================
   Future<void> _generateWeeklyChapter() async {
     final client = Supabase.instance.client;
@@ -646,22 +661,41 @@ class _TodayPageState extends State<TodayPage> {
     );
 
     try {
-      // 週の範囲
+      // ─────────────────────────────
+      // 「先週」の 7 日間を決める（Mon〜Sun）
+      // ─────────────────────────────
       final now = DateTime.now();
+
+      // 今週の月曜
       final thisWeekStart = _startOfWeek(now);
+
+      // 先週の月曜
       final lastWeekStart = thisWeekStart.subtract(const Duration(days: 7));
-      final lastWeekEnd = thisWeekStart;
-      final lastWeekStartStr = lastWeekStart.toIso8601String().substring(0, 10);
+
+      // 先週の末日（日曜） = 月曜 + 6 日
+      final lastWeekEnd = lastWeekStart.add(const Duration(days: 6));
+
+      // YYYY-MM-DD のキー（JST ベース）
+      final lastWeekStartKey = _jstDateKey(lastWeekStart); // 例: 2026-01-26
+      final lastWeekEndKey = _jstDateKey(lastWeekEnd);     // 例: 2026-02-01
+
+      // DB 上の week_start_date も「先週の月曜」で保存・判定
+      final lastWeekStartStr = lastWeekStartKey;
+
+      // 月の第何週目か（ラベル用）
       final weekOfMonth = _weekOfMonth(lastWeekStart);
 
-      // 先週の daily を取得
+      // ─────────────────────────────
+      // 先週 7 日間分の daily を date_key で取得
+      // ─────────────────────────────
       final entryList = await client
           .from('entries')
           .select()
           .eq('user_id', user.id)
           .eq('chapter_type', 'daily')
-          .gte('created_at', lastWeekStart.toUtc().toIso8601String())
-          .lt('created_at', lastWeekEnd.toUtc().toIso8601String())
+          .gte('date_key', lastWeekStartKey)
+          .lte('date_key', lastWeekEndKey)
+          .order('date_key', ascending: true)
           .order('created_at', ascending: true);
 
       final dailyList = (entryList as List).cast<Map<String, dynamic>>();
@@ -673,7 +707,9 @@ class _TodayPageState extends State<TodayPage> {
         return;
       }
 
-      // すでに weekly があるかチェック
+      // ─────────────────────────────
+      // すでに先週の weekly があるかチェック
+      // ─────────────────────────────
       final weekly = await client
           .from('entries')
           .select()
@@ -699,7 +735,9 @@ class _TodayPageState extends State<TodayPage> {
         return;
       }
 
-      // プロフィール読み取り
+      // ─────────────────────────────
+      // プロフィール読み取り（人称・名前）
+      // ─────────────────────────────
       final profile = await client
           .from('profiles')
           .select()
@@ -740,7 +778,9 @@ class _TodayPageState extends State<TodayPage> {
               })
           .toList();
 
-      // 週まとめ生成
+      // ─────────────────────────────
+      // 週まとめ生成（Edge Function 呼び出し）
+      // ─────────────────────────────
       final res = await client.functions.invoke(
         'generate_weekly_chapter',
         body: {
@@ -748,6 +788,8 @@ class _TodayPageState extends State<TodayPage> {
           'persona': {
             'first_person': firstPerson,
             'name': userName,
+            'occupation': profile?['occupation'],
+            'freeContext': profile?['free_context'],
           },
         },
       );
@@ -755,14 +797,14 @@ class _TodayPageState extends State<TodayPage> {
       final data = res.data as Map<String, dynamic>?;
 
       if (data == null || data['body'] == null) {
-        throw Exception('特別章の生成に失敗しました');
+        throw Exception('まとめ章の生成に失敗しました');
       }
 
       // 本文は AI から受け取り、タイトルはアプリ側で決める
       final body = data['body'] as String;
 
       final title =
-          '第${weekOfMonth}週 まとめ章（特別章）第${volumeNumber}巻';
+          '第${weekOfMonth}週 まとめ章 第${volumeNumber}巻';
 
       // entries に weekly として保存
       await client.from('entries').insert({
@@ -772,13 +814,13 @@ class _TodayPageState extends State<TodayPage> {
         'title': title,
         'body': body,
         'chapter_type': 'weekly',
-        'week_start_date': lastWeekStartStr,
+        'week_start_date': lastWeekStartStr, // 先週の月曜
         'volume': volumeNumber,
         'created_at': DateTime.now().toUtc().toIso8601String(),
       });
 
       // 非プレミアムは無料枠（各1回）を消費
-      if (!_isPremium) {
+      if (!_effectivePremium) {
         await _setFreeUsed(_kFreeWeeklyUsed);
       }
 
@@ -798,8 +840,9 @@ class _TodayPageState extends State<TodayPage> {
         ),
       );
     } catch (e) {
+      debugPrint('週のまとめ章の生成に失敗しました: $e');
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('特別章の生成に失敗しました: $e')),
+        const SnackBar(content: Text('週のまとめ章の生成に失敗しました。時間をおいてもう一度お試しください。')),
       );
     } finally {
       if (!mounted) return;
@@ -919,6 +962,8 @@ class _TodayPageState extends State<TodayPage> {
           'persona': {
             'first_person': firstPerson,
             'name': userName,
+            'occupation': profile?['occupation'],
+            'freeContext': profile?['free_context'],
           },
         },
       );
@@ -946,7 +991,7 @@ class _TodayPageState extends State<TodayPage> {
       });
 
       // 非プレミアムは無料枠（各1回）を消費
-      if (!_isPremium) {
+      if (!_effectivePremium) {
         await _setFreeUsed(_kFreeMonthlyUsed);
       }
 
@@ -956,8 +1001,9 @@ class _TodayPageState extends State<TodayPage> {
         SnackBar(content: Text('$monthLabelの短編を作成しました')),
       );
     } catch (e) {
+      debugPrint('月の短編の生成に失敗しました: $e');
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('月の短編の生成に失敗しました: $e')),
+        const SnackBar(content: Text('月の短編の生成に失敗しました。時間をおいてもう一度お試しください。')),
       );
     } finally {
       if (!mounted) return;
@@ -1027,6 +1073,8 @@ class _TodayPageState extends State<TodayPage> {
           'persona': {
             'first_person': firstPerson,
             'name': userName,
+            'occupation': profile?['occupation'],
+            'freeContext': profile?['free_context'],
           },
         },
       );
@@ -1058,8 +1106,9 @@ class _TodayPageState extends State<TodayPage> {
 
       await _updateWeeklyButtonState();
     } catch (e) {
+      debugPrint('今日の小説の生成に失敗しました: $e');
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('小説の生成に失敗しました: $e')),
+        const SnackBar(content: Text('小説の生成に失敗しました。時間をおいてもう一度お試しください。')),
       );
     } finally {
       if (!mounted) return;
@@ -1202,10 +1251,11 @@ class _TodayPageState extends State<TodayPage> {
                     maxLines: 8,
                     decoration: const InputDecoration(
                       hintText: '例）\n'
-                          '・8時に起きて遅刻した\n'
-                          '・上司に怒られたけど空がきれいだった\n'
-                          '・帰りに食べたご飯が思った以上においしかった\n'
-                          '・晴れ',
+                          '・くもり空\n'
+                          '・帰り道の風が気持ちよかった\n'
+                          '・朝のコーヒーがいつもより苦く感じた\n'
+                          '・スーパーで好きなお菓子が安くなっていた\n'
+                          '・洗濯物がちゃんと乾いていてうれしかった',
                       border: OutlineInputBorder(),
                     ),
                   ),
@@ -1406,7 +1456,7 @@ class _GeneratingDialogState extends State<GeneratingDialog> {
         steps = [
           '先週の出来事を読み取っています…',
           '一週間の流れをまとめています…',
-          '特別章として仕上げています…',
+          'まとめ章として仕上げています…',
         ];
         break;
       case 'monthly':
